@@ -20,6 +20,8 @@
 #include "jgui/japplication.h"
 #include "jgui/jwindow.h"
 #include "jgui/jraster.h"
+#include "jgui/jindexedimage.h"
+#include "jgui/jbufferedimage.h"
 
 #define SCREEN_WIDTH 720
 #define SCREEN_HEIGHT 480
@@ -27,7 +29,26 @@
 #define SCALING 1.0f
 
 #define PLAYER_STEP 8
+#define PLAYER_FOV 60.0f
 #define PLAYER_ROTATE 6.0f
+
+#define FIRE_SCREEN_WIDTH 240*3
+#define FIRE_SCREEN_HEIGHT 90
+
+uint32_t palette[37] = {
+  0xff070707, 0xff1f0707, 0xff2f0f07, 0xff470f07, 
+  0xff571707, 0xff671f07, 0xff771f07, 0xff8f2707, 
+  0xff9f2f07, 0xffaf3f07, 0xffbf4707, 0xffc74707, 
+  0xffdf4f07, 0xffdf5707, 0xffdf5707, 0xffd75f07, 
+  0xffd75f07, 0xffd7670f, 0xffcf6f0f, 0xffcf770f, 
+  0xffcf7f0f, 0xffcf8717, 0xffc78717, 0xffc78f17, 
+  0xffc7971f, 0xffbf9f1f, 0xffbf9f1f, 0xffbfa727, 
+  0xffbfa727, 0xffbfaf2f, 0xffb7af2f, 0xffb7b72f, 
+  0xffb7b737, 0xffcfcf6f, 0xffdfdf9f, 0xffefefc7, 
+  0xffffffff
+};
+
+uint8_t buffer[FIRE_SCREEN_HEIGHT][FIRE_SCREEN_WIDTH];
 
 class Barrier {
 
@@ -248,6 +269,24 @@ class Player {
       return _rays;
     }
 
+    float GetDirection()
+    {
+      for (auto ray : _rays) {
+        jgui::jpoint_t<float> 
+          dir = ray.GetDirection();
+        float 
+          angle = 180.0f*atan2f(dir.y, dir.x)/M_PI;
+
+        if (angle < 0.0f) {
+          angle = angle + 360.0f;
+        }
+
+        return angle;
+      }
+
+      return 0.0f;
+    }
+
     jgui::jpoint_t<int> GetPosition()
     {
       for (auto ray : _rays) {
@@ -301,7 +340,7 @@ class Player {
 
       int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT)/2;
 
-      raster.DrawImage(_frames[(frame++)%_frames.size()], {(SCREEN_WIDTH - size)/2, SCREEN_HEIGHT - size});
+      raster.DrawImage(_frames[(frame++/2)%_frames.size()], {(SCREEN_WIDTH - size)/2, SCREEN_HEIGHT - size});
     }
 
 };
@@ -324,7 +363,7 @@ class Scene : public jgui::Window {
   public:
     Scene():
       jgui::Window(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT),
-      _player(60.0f)
+      _player(PLAYER_FOV)
     {
       _bricks = new jgui::BufferedImage("images/redbrick.png");
       _eagles = new jgui::BufferedImage("images/eagle.png");
@@ -352,10 +391,26 @@ class Scene : public jgui::Window {
       }
       
       _player.SetPosition(jgui::jpoint_t<int>{200, 250});
+      
+      // INFO:: fire
+      srand(time(NULL));
+
+      for (int j=0; j<FIRE_SCREEN_HEIGHT; j++) {
+      	for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
+					buffer[j][i] = 36;
+				}
+      }
+
+      SetResizable(false);
     }
 
     virtual ~Scene()
     {
+      _barriers.clear();
+
+      delete _torch;
+      _torch = nullptr;
+
       delete _bricks;
       _bricks = nullptr;
 
@@ -438,6 +493,31 @@ class Scene : public jgui::Window {
 
       raster.Clear();
 
+      // INFO:: fire
+      jgui::jsize_t<int>
+        size = GetSize();
+ 
+      for (int j=0; j<FIRE_SCREEN_HEIGHT - 1; j++) {
+        for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
+					int decay = random()%3;
+          int intensity = buffer[j + 1][i] - decay;
+
+					if (intensity < 0) {
+						intensity = 0;
+					}
+
+					buffer[j][i + decay] = intensity;
+        }
+      }
+      
+			jgui::IndexedImage image(
+				palette, 37, (uint8_t *)buffer, {FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
+      int 
+        left = (2*FIRE_SCREEN_WIDTH*_player.GetDirection())/360.0;
+
+      g->DrawImage(&image, {left, 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}, {0, 0, size.width, size.height/2});
+
+      // INFO:: walls
       const std::vector<Ray> &rays = _player.GetRays();
 
       KeyHandle();
@@ -485,7 +565,7 @@ class Scene : public jgui::Window {
         int
           wall = (SCREEN_HEIGHT*32.0f/SCALING)/(d0*distort);
         float
-          distance = (50.0f + random_light)/d0;
+          distance = (50.0f + 10.0f/(random_light + 1.0f))/d0;
 
         if (distance < 0.0f) {
           distance = 0.0f;
