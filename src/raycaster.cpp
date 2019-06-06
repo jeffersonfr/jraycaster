@@ -351,7 +351,8 @@ class Scene : public jgui::Window {
     jgui::Image
       *_bricks,
       *_eagles,
-      *_torch;
+      *_torch,
+      *_floor;
     std::vector<Barrier> 
       _barriers;
     Player 
@@ -368,6 +369,7 @@ class Scene : public jgui::Window {
       _bricks = new jgui::BufferedImage("images/redbrick.png");
       _eagles = new jgui::BufferedImage("images/eagle.png");
       _torch = new jgui::BufferedImage("images/torch.png");
+      _floor = new jgui::BufferedImage("images/greystone.png");
 
       _barriers.emplace_back(jgui::jline_t<int>{{0, 0}, {SCREEN_WIDTH, 0}});
       _barriers.emplace_back(jgui::jline_t<int>{{SCREEN_WIDTH, 0}, {SCREEN_WIDTH, SCREEN_HEIGHT}});
@@ -603,6 +605,31 @@ class Scene : public jgui::Window {
               raster.SetColor(0xff000000 | pr << 0x10 | pg << 0x08 | pb << 0x00);
               raster.SetPixel({i, j});
             }
+          }
+
+          // INFO:: floor with lights/shadows
+          int wall_limit = SCREEN_HEIGHT/2 + wall;
+
+          if (wall_limit > SCREEN_HEIGHT) {
+            wall_limit = SCREEN_HEIGHT;
+          }
+
+          for (int j=wall_limit; j<SCREEN_HEIGHT; j++) {
+            float
+              d = SCREEN_HEIGHT/(2.0f*j - SCREEN_HEIGHT)/distort;
+            int 
+              c = 0xff - (0x80 + random_light)*d;
+
+            if (c < 0x00) {
+              c = 0x00;
+            }
+            
+            if (c > 0xff) {
+              c = 0xff;
+            }
+
+            raster.SetColor(0xff000000 | c << 0x10 | c << 0x08 | c << 0x00);
+            raster.SetPixel({i, j});
           }
         }
       }
