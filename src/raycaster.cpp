@@ -26,11 +26,12 @@
 #define SCREEN_WIDTH 720
 #define SCREEN_HEIGHT 480
 
-#define SCALING 1.0f
+#define SCALING_X 1.0f
+#define SCALING_Y 2.0f
 
-#define PLAYER_STEP 8
+#define PLAYER_STEP 4.0f
 #define PLAYER_FOV 60.0f
-#define PLAYER_ROTATE 6.0f
+#define PLAYER_ROTATE 4.0f
 
 #define FIRE_SCREEN_WIDTH 240*3
 #define FIRE_SCREEN_HEIGHT 90
@@ -221,24 +222,23 @@ class Ray {
 class Player {
 
   private:
-    std::vector<Ray> 
-      _rays;
     std::vector<jgui::Image *>
       _frames;
-    float 
+		jgui::jpoint_t<int>
+			_pos;
+    float
+			_dir,
       _fov;
 
   public:
     Player(float fov)
     {
+			_pos = {
+				0, 0
+			};
+			_dir = 0.0f;
       _fov = fov;
 
-      float step = _fov/SCREEN_WIDTH;
-
-      for (float i=-_fov/2.0f; i<_fov/2.0f; i+=step) {
-        _rays.emplace_back(jgui::jpoint_t<int>{0, 0}, i);
-      }
-      
       jgui::BufferedImage image("images/candle.png");
 
       for (int i=0; i<4; i++) {
@@ -264,74 +264,45 @@ class Player {
       return _fov;
     }
 
-    const std::vector<Ray> & GetRays()
+    void SetDirection(float dir)
     {
-      return _rays;
+			_dir = dir;;
     }
 
     float GetDirection()
     {
-      for (auto ray : _rays) {
-        jgui::jpoint_t<float> 
-          dir = ray.GetDirection();
-        float 
-          angle = 180.0f*atan2f(dir.y, dir.x)/M_PI;
-
-        if (angle < 0.0f) {
-          angle = angle + 360.0f;
-        }
-
-        return angle;
-      }
-
-      return 0.0f;
+			return _dir;
     }
 
     jgui::jpoint_t<int> GetPosition()
     {
-      for (auto ray : _rays) {
-        return ray.GetPosition();
-      }
-
-      return {0, 0};
+			return _pos;
     }
 
     void SetPosition(jgui::jpoint_t<int> point)
     {
-      for (auto &ray : _rays) {
-        ray.SetPosition(point);
-      }
+			_pos = point;
     }
 
     void LookAt(float angle)
     {
-      for (auto &ray : _rays) {
-        ray.LookAt(angle);
-      }
+			_dir = fmod(_dir + angle, 360.0f);
     }
 
     void Forward()
     {
-      Ray &ray = _rays[_rays.size()/2];
+			float 
+				rad = M_PI*_dir/180.0f;
 
-      jgui::jpoint_t<int> pos = ray.GetPosition();
-      jgui::jpoint_t<float> dir = ray.GetDirection();
-
-      int step = PLAYER_STEP;
-
-      SetPosition({(int)(pos.x + step*dir.x), (int)(pos.y + step*dir.y)});
+      SetPosition({(int)(_pos.x + PLAYER_STEP*cos(rad)), (int)(_pos.y + PLAYER_STEP*sin(rad))});
     }
 
     void Backward()
     {
-      Ray &ray = _rays[_rays.size()/2];
+			float 
+				rad = M_PI*_dir/180.0f;
 
-      jgui::jpoint_t<int> pos = ray.GetPosition();
-      jgui::jpoint_t<float> dir = ray.GetDirection();
-
-      int step = -PLAYER_STEP;
-
-      SetPosition({(int)(pos.x + step*dir.x), (int)(pos.y + step*dir.y)});
+      SetPosition({(int)(_pos.x - PLAYER_STEP*cos(rad)), (int)(_pos.y - PLAYER_STEP*sin(rad))});
     }
 
     void Paint(jgui::Raster &raster)
@@ -367,7 +338,8 @@ class Scene : public jgui::Window {
       _player(PLAYER_FOV)
     {
       _bricks = new jgui::BufferedImage("images/redbrick.png");
-      _eagles = new jgui::BufferedImage("images/eagle.png");
+      _eagles = new jgui::BufferedImage("images/wall01.png");
+      // _eagles = new jgui::BufferedImage("images/eagle.png");
       _torch = new jgui::BufferedImage("images/torch.png");
       _floor = new jgui::BufferedImage("images/greystone.png");
 
@@ -436,13 +408,12 @@ class Scene : public jgui::Window {
       jgui::EventManager *ev = GetEventManager();
 
       if (ev->IsKeyDown(jevent::JKS_CURSOR_LEFT)) {
-        _player.LookAt(PLAYER_ROTATE);
-      } else if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
         _player.LookAt(-PLAYER_ROTATE);
+      } else if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
+        _player.LookAt(PLAYER_ROTATE);
       } else if (
           ev->IsKeyDown(jevent::JKS_CURSOR_UP) or
           ev->IsKeyDown(jevent::JKS_CURSOR_DOWN)) {
-        const std::vector<Ray> &rays = _player.GetRays();
         jgui::jpoint_t<int> pos = _player.GetPosition();
 
         if (ev->IsKeyDown(jevent::JKS_CURSOR_UP)) {
@@ -451,7 +422,9 @@ class Scene : public jgui::Window {
           _player.Backward();
         }
       
-        for (auto ray : rays) {
+      	for (int i=0; i<SCREEN_WIDTH; i+=SCREEN_WIDTH >> 4) {
+					Ray 
+						ray(_player.GetPosition(), -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection());
           jgui::jpoint_t<int> 
             pray = ray.GetPosition();
 
@@ -519,16 +492,15 @@ class Scene : public jgui::Window {
 
       g->DrawImage(&image, {left, 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}, {0, 0, size.width, size.height/2});
 
-      // INFO:: walls
-      const std::vector<Ray> &rays = _player.GetRays();
-
+			// INFO:: key handling
       KeyHandle();
 
+      // INFO:: draw walls
       int random_light = random()%10;
 
-      // draw 3d map
+      // INFO:: 3d map
       for (int i=0; i<SCREEN_WIDTH; i++) {
-        const Ray &ray = rays[i];
+				Ray ray(_player.GetPosition(), -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection());
 
         std::pair<float, jgui::jpoint_t<int>> 
           best = {-1.0f, {9999, 9999}};
@@ -565,7 +537,7 @@ class Scene : public jgui::Window {
         float 
           distort = cos(-radians/2.0f + (radians*i)/(float)SCREEN_WIDTH);
         int
-          wall = (SCREEN_HEIGHT*32.0f/SCALING)/(d0*distort);
+          wall = (SCREEN_HEIGHT*(64.0f*SCALING_X)/SCALING_Y)/(d0*distort);
         float
           distance = (50.0f + 10.0f/(random_light + 1.0f))/d0;
 
@@ -585,7 +557,7 @@ class Scene : public jgui::Window {
           jgui::Image 
             *texture = pbarrier->GetTexture();
           int 
-            index = (int)(best.first*pbarrier->GetSize()*SCALING)%64;
+            index = (int)(best.first*pbarrier->GetSize()*SCALING_Y)%64;
 
           for (int j=SCREEN_HEIGHT/2 - wall; j<SCREEN_HEIGHT/2 + wall; j++) {
             if (j > 0 and j < SCREEN_HEIGHT) {
@@ -639,7 +611,8 @@ class Scene : public jgui::Window {
       if (_show_map == true) {
         raster.SetColor(0xffff0000);
 
-        Ray ray = rays[rays.size()/2];
+				Ray 
+					ray(_player.GetPosition(), _player.GetDirection());
         jgui::jpoint_t<float> 
           dir = ray.GetDirection();
         float 
