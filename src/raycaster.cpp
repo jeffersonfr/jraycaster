@@ -164,7 +164,7 @@ class Sprite {
     {
       jgui::Image *scale = GetTexture()->Scale({16, 16});
 
-      raster.DrawImage(scale, _pos);
+      raster.DrawImage(scale, {_pos.x - 8, _pos.y - 8});
 
       delete scale;
     }
@@ -714,9 +714,10 @@ class Scene : public jgui::Window {
             *image = sprite.GetTexture();
           jgui::jsize_t<int>
             size = image->GetSize();
+
           float
             object_distance = sqrtf(dpos.x*dpos.x + dpos.y*dpos.y),
-            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/object_distance,
+            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
             object_floor = SCREEN_HEIGHT - object_ceiling,
             object_height = (object_floor - object_ceiling)*size.height,
             object_ratio = size.height/(float)size.width,
@@ -734,7 +735,7 @@ class Scene : public jgui::Window {
                 pos {(int)object_column, (int)(object_ceiling + j)};
 
               if (pos.x >= 0 and pos.x < SCREEN_WIDTH and pos.y >= 0 and pos.y < SCREEN_HEIGHT) {
-                if ((object_distance - object_width/2.0f) <= _zbuffer[object_column]) {
+                if (object_distance <= _zbuffer[object_column]) {
                   uint32_t
                     pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
 
