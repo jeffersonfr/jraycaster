@@ -59,30 +59,32 @@ class Barrier {
   private:
     jgui::Image 
       *_image;
-    jgui::jline_t<int> 
-      _line;
+    jgui::jpoint_t<int> 
+      _p0,
+      _p1;
 
   public:
-    Barrier(jgui::Image *image, jgui::jline_t<int> line)
+    Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
     {
       _image = image;
-      _line = line;
+      _p0 = p0;
+      _p1 = p1;
     }
 
     virtual ~Barrier()
     {
     }
 
-    jgui::jline_t<int> GetBounds()
+    std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> GetSegment()
     {
-      return _line;
+      return {_p0, _p1};
     }
 
     float GetSize()
     {
       int 
-        x = _line.p0.x - _line.p1.x,
-        y = _line.p0.y - _line.p1.y;
+        x = _p0.x - _p1.x,
+        y = _p0.y - _p1.y;
 
       return sqrtf(x*x + y*y);
     }
@@ -90,20 +92,7 @@ class Barrier {
     void Paint(jgui::Raster &raster)
     {
       raster.SetColor(0xffff0000);
-      raster.DrawLine(_line);
-      
-      // INFO:: earthquake
-      /*
-      int 
-        x = random()%5 - 2,
-        y = random()%5 - 2;
-
-      _line.p0.x += x;
-      _line.p0.y += y;
-      
-      _line.p1.x += x;
-      _line.p1.y += y;
-      */
+      raster.DrawLine(_p0, _p1);
     }
 
     void SetTexture(jgui::Image *image)
@@ -260,12 +249,12 @@ class Ray {
 
     std::pair<float, jgui::jpoint_t<int>> Cast(Barrier &barrier) const
     {
-      jgui::jline_t<int> line = barrier.GetBounds();
+      std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> segment = barrier.GetSegment();
 
-      const float x1 = line.p0.x;
-      const float y1 = line.p0.y;
-      const float x2 = line.p1.x;
-      const float y2 = line.p1.y;
+      const float x1 = segment.first.x;
+      const float y1 = segment.first.y;
+      const float x2 = segment.second.x;
+      const float y2 = segment.second.y;
 
       const float x3 = _p0.x;
       const float y3 = _p0.y;
@@ -292,7 +281,7 @@ class Ray {
 
     void Paint(jgui::Raster &raster)
     {
-      raster.DrawLine({_p0, {(int)(_p0.x + 10*_p1.x), (int)(_p0.y + 10*_p1.y)}});
+      raster.DrawLine(_p0, {(int)(_p0.x + 10*_p1.x), (int)(_p0.y + 10*_p1.y)});
     }
 
 };
@@ -428,19 +417,14 @@ class Scene : public jgui::Window {
       _images["ghost"] = new jgui::BufferedImage("images/ghost.png");
       _images["player"] = new jgui::BufferedImage("images/player.png");
 
-      _barriers.emplace_back(_images["wall0"], jgui::jline_t<int>{{0, 0}, {SCREEN_WIDTH, 0}});
-      _barriers.emplace_back(_images["wall0"], jgui::jline_t<int>{{SCREEN_WIDTH, 0}, {SCREEN_WIDTH, SCREEN_HEIGHT}});
-      _barriers.emplace_back(_images["wall0"], jgui::jline_t<int>{{SCREEN_WIDTH, SCREEN_HEIGHT}, {0, SCREEN_HEIGHT}});
-      _barriers.emplace_back(_images["wall0"], jgui::jline_t<int>{{0, SCREEN_HEIGHT}, {0, 0}});
+      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, 0}, jgui::jpoint_t<int>{SCREEN_WIDTH, 0});
+      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{SCREEN_WIDTH, 0}, jgui::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
+      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, SCREEN_HEIGHT});
+      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, 0});
 
       for (int i=0; i<3; i++) {
-        jgui::jline_t<int>
-          line = {
-            {(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)},
-            {(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}
-          };
-
-        _barriers.emplace_back(_images["wall1"], line);
+        _barriers.emplace_back(_images["wall1"], 
+            jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
       }
       
       for (int i=0; i<10; i++) {
@@ -509,22 +493,22 @@ class Scene : public jgui::Window {
         }
       
 				for (auto barrier : _barriers) {
-					jgui::jline_t<int>
-						line = barrier.GetBounds();
+          std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>>
+						segment = barrier.GetSegment();
 					jgui::jpoint_t<int>
 						point = _player.GetPosition();
 
           // INFO:: distance from a point to a line segment
 					float
-            px = line.p1.x - line.p0.x,
-            py = line.p1.y - line.p0.y,
+            px = segment.second.x - segment.first.x,
+            py = segment.second.y - segment.first.y,
             delta = px*px + py*py,
-            u = ((point.x - line.p0.x)*px + (point.y - line.p0.y)*py)/delta;
+            u = ((point.x - segment.first.x)*px + (point.y - segment.first.y)*py)/delta;
 
           if (u >= 0.0f and u <= 1.0f) { // INFO:: point in a line segment
             float
-              x = line.p0.x + u*px,
-              y = line.p0.y + u*py,
+              x = segment.first.x + u*px,
+              y = segment.first.y + u*py,
               dx = x - point.x,
               dy = y - point.y,
               distance = sqrtf(dx*dx + dy*dy);
@@ -769,7 +753,7 @@ class Scene : public jgui::Window {
             color = 0xf0*distance;
 
           raster.SetColor(0xff000000 | color << 16 | color << 8 | color);
-          raster.DrawLine({{i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall}});
+          raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
         } else {
           jgui::Image 
             *texture = pbarrier->GetTexture();
