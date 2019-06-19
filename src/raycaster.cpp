@@ -160,6 +160,28 @@ class Sprite {
       return _frames[engine_clock%_frames.size()];
     }
 
+    void Update()
+    {
+      _pos.x = _pos.x + random()%5 - 2;
+      _pos.y = _pos.y + random()%5 - 2;
+
+      if (_pos.x < 0) {
+        _pos.x = 0;
+      }
+
+      if (_pos.y < 0) {
+        _pos.y = 0;
+      }
+
+      if (_pos.x > SCREEN_WIDTH) {
+        _pos.x = SCREEN_WIDTH;
+      }
+      
+      if (_pos.y > SCREEN_HEIGHT) {
+        _pos.y = SCREEN_HEIGHT;
+      }
+    }
+
     void Paint(jgui::Raster &raster)
     {
       jgui::Image *scale = GetTexture()->Scale({16, 16});
@@ -486,27 +508,34 @@ class Scene : public jgui::Window {
           _player.Backward();
         }
       
-      	for (int i=0; i<SCREEN_WIDTH; i+=SCREEN_WIDTH >> 4) {
-					Ray 
-						ray(_player.GetPosition(), -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection());
-          jgui::jpoint_t<int> 
-            pray = ray.GetPosition();
+				for (auto barrier : _barriers) {
+					jgui::jline_t<int>
+						line = barrier.GetBounds();
+					jgui::jpoint_t<int>
+						point = _player.GetPosition();
 
-          for (auto barrier : _barriers) {
-            std::pair<float, jgui::jpoint_t<int>> point = ray.Cast(barrier);
+          // INFO:: distance from a point to a line segment
+					float
+            px = line.p1.x - line.p0.x,
+            py = line.p1.y - line.p0.y,
+            delta = px*px + py*py,
+            u = ((point.x - line.p0.x)*px + (point.y - line.p0.y)*py)/delta;
 
-            if (point.first >= 0.0f) {
-              int 
-                d1 = sqrtf((pray.x - point.second.x)*(pray.x - point.second.x) + (pray.y - point.second.y)*(pray.y - point.second.y));
+          if (u >= 0.0f and u <= 1.0f) { // INFO:: point in a line segment
+            float
+              x = line.p0.x + u*px,
+              y = line.p0.y + u*py,
+              dx = x - point.x,
+              dy = y - point.y,
+              distance = sqrtf(dx*dx + dy*dy);
 
-              if (d1 < 16) { // INFO:: minimal distance to avoid distortions when hit the barrier
-                _player.SetPosition(pos);
+            if (distance < 8) { // INFO:: minumum perpendicular distance to wall
+              _player.SetPosition(pos);
 
-                return;
-              }
+              return;
             }
           }
-        }
+				}
       }
     }
 
@@ -748,6 +777,8 @@ class Scene : public jgui::Window {
             }
           }
         }
+
+        sprite.Update();
       }
 
       _player.Paint(raster);
