@@ -50,7 +50,7 @@ static uint32_t palette[37] = {
   0xffffffff
 };
 
-static uint8_t buffer[FIRE_SCREEN_HEIGHT][FIRE_SCREEN_WIDTH];
+static uint8_t buffer[FIRE_SCREEN_HEIGHT*FIRE_SCREEN_WIDTH];
 
 static uint32_t engine_clock = 0;
 
@@ -459,7 +459,7 @@ class Scene : public jgui::Window {
 
       for (int j=0; j<FIRE_SCREEN_HEIGHT; j++) {
       	for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
-					buffer[j][i] = 36;
+					buffer[j*FIRE_SCREEN_WIDTH + i] = 36;
 				}
       }
 
@@ -555,6 +555,148 @@ class Scene : public jgui::Window {
       std::this_thread::sleep_for(diff);
     }
 
+    void PaintSprites(jgui::Raster &raster)
+    {
+      // INFO:: draw sprites
+      jgui::jpoint_t<int>
+        ppos = _player.GetPosition();
+
+      std::sort(_sprites.begin(), _sprites.end(), [&](Sprite &s1, Sprite &s2) {
+          jgui::jpoint_t<int>
+          p1 = s1.GetPosition(),
+          p2 = s2.GetPosition();
+          jgui::jpoint_t<float>
+          d1 {(float)(p1.x - ppos.x), (float)(p1.y - ppos.y)},
+          d2 {(float)(p2.x - ppos.x), (float)(p2.y - ppos.y)};
+
+          return (d1.x*d1.x + d1.y*d1.y) > (d2.x*d2.x + d2.y*d2.y);
+          });
+
+      for (auto &sprite : _sprites) {
+        jgui::jpoint_t<int>
+          spos = sprite.GetPosition(),
+               dpos = {spos.x - ppos.x, spos.y - ppos.y};
+        float
+          object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
+
+        if (dpos.x < 0) {
+          object_angle = object_angle + M_PI;
+        }
+
+        object_angle = fmod(object_angle + _player.GetFieldOfView()/2, 2.0f*M_PI);
+
+        if (object_angle < 0.0f) {
+          object_angle = object_angle + 2.0f*M_PI;
+        }
+
+        object_angle = object_angle - _player.GetFieldOfView()/2.0f;
+
+        bool
+          inner_player_view = fabs(object_angle) < (_player.GetFieldOfView()/2.0f); // OPTIMIZE:: process only sprites in field of view
+
+        if (inner_player_view) {
+          jgui::Image
+            *image = sprite.GetTexture();
+          jgui::jsize_t<int>
+            size = image->GetSize();
+
+          float
+            object_distance = sqrtf(dpos.x*dpos.x + dpos.y*dpos.y),
+                            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
+                            object_floor = SCREEN_HEIGHT - object_ceiling,
+                            object_height = (object_floor - object_ceiling)*size.height,
+                            object_ratio = size.height/(float)size.width,
+                            object_width = object_height/object_ratio,
+                            object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
+
+          for (int i=0; i<object_width; i++) {
+            for (int j=0; j<object_height; j++) {
+              float 
+                sample_x = i/object_width,
+                         sample_y = j/object_height;
+              int
+                object_column = (int)(object_center + i - object_width/2.0f);
+              jgui::jpoint_t<int>
+                pos {(int)object_column, (int)(object_ceiling + j)};
+
+              if (pos.x >= 0 and pos.x < SCREEN_WIDTH and pos.y >= 0 and pos.y < SCREEN_HEIGHT) {
+                if (object_distance <= _zbuffer[object_column]) {
+                  uint32_t
+                    pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
+
+                  if (pixel & 0xff000000) {
+                    raster.SetColor(pixel);
+                    raster.SetPixel(pos);
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        sprite.Update();
+      }
+    }
+
+    void PaintFire(jgui::Raster &raster)
+    {
+      for (int j=0; j<FIRE_SCREEN_HEIGHT - 1; j++) {
+        for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
+          int decay = random()%3;
+          int intensity = buffer[(j + 1)*FIRE_SCREEN_WIDTH + i] - decay;
+
+          if (intensity < 0) {
+            intensity = 0;
+          }
+
+          buffer[j*FIRE_SCREEN_WIDTH + (i + decay)] = intensity;
+        }
+      }
+
+      jgui::IndexedImage 
+        image(palette, 37, (uint8_t *)buffer, {FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
+      jgui::Image
+        *crop = image.Crop({(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}),
+        *scale = crop->Scale({SCREEN_WIDTH, SCREEN_HEIGHT/2});
+
+      raster.DrawImage(scale, {0, 0});
+
+      delete scale;
+      delete crop;
+    }
+
+    void PaintPlayer(jgui::Raster &raster)
+    {
+      _player.Paint(raster);
+    }
+
+    void PaintMap(jgui::Raster &raster)
+    {
+      jgui::Image 
+        *rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
+      jgui::jpoint_t<int>
+        pos = _player.GetPosition();
+      jgui::jsize_t<int>
+        size = rotate->GetSize();
+      float 
+        arc0 = -_player.GetDirection() + _player.GetFieldOfView()/2.0f,
+             arc1 = -_player.GetDirection() - _player.GetFieldOfView()/2.0f;
+
+      raster.SetColor(0xff808080);
+      raster.FillArc(pos, {100, 100}, arc1, arc0);
+      raster.DrawImage(rotate, {pos.x - size.width/2, pos.y - size.height/2});
+
+      delete rotate;
+
+      for (auto &barrier : _barriers) {
+        barrier.Paint(raster);
+      }
+
+      for (auto &sprite : _sprites) {
+        sprite.Paint(raster);
+      }
+    }
+
     void Paint(jgui::Graphics *g) 
     {
       jgui::Raster raster((uint32_t *)cairo_image_surface_get_data(g->GetCairoSurface()), GetSize());
@@ -565,23 +707,7 @@ class Scene : public jgui::Window {
       jgui::jsize_t<int>
         size = GetSize();
  
-      for (int j=0; j<FIRE_SCREEN_HEIGHT - 1; j++) {
-        for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
-					int decay = random()%3;
-          int intensity = buffer[j + 1][i] - decay;
-
-					if (intensity < 0) {
-						intensity = 0;
-					}
-
-					buffer[j][i + decay] = intensity;
-        }
-      }
-      
-			jgui::IndexedImage 
-        image(palette, 37, (uint8_t *)buffer, {FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
-
-      g->DrawImage(&image, {(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}, {0, 0, size.width, size.height/2});
+      PaintFire(raster);
 
 			// INFO:: key handling
       KeyHandle();
@@ -701,112 +827,12 @@ class Scene : public jgui::Window {
         }
       }
 
-      // INFO:: draw sprites
-      jgui::jpoint_t<int>
-        ppos = _player.GetPosition();
+      PaintSprites(raster);
 
-      std::sort(_sprites.begin(), _sprites.end(), [&](Sprite &s1, Sprite &s2) {
-        jgui::jpoint_t<int>
-          p1 = s1.GetPosition(),
-          p2 = s2.GetPosition();
-        jgui::jpoint_t<float>
-          d1 {(float)(p1.x - ppos.x), (float)(p1.y - ppos.y)},
-          d2 {(float)(p2.x - ppos.x), (float)(p2.y - ppos.y)};
-          
-        return (d1.x*d1.x + d1.y*d1.y) > (d2.x*d2.x + d2.y*d2.y);
-      });
-
-      for (auto &sprite : _sprites) {
-        jgui::jpoint_t<int>
-          spos = sprite.GetPosition(),
-          dpos = {spos.x - ppos.x, spos.y - ppos.y};
-        float
-          object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
-
-        if (dpos.x < 0) {
-          object_angle = object_angle + M_PI;
-        }
-
-        object_angle = fmod(object_angle + _player.GetFieldOfView()/2, 2.0f*M_PI);
-
-        if (object_angle < 0.0f) {
-          object_angle = object_angle + 2.0f*M_PI;
-        }
-
-        object_angle = object_angle - _player.GetFieldOfView()/2.0f;
-        
-        bool
-          inner_player_view = fabs(object_angle) < (_player.GetFieldOfView()/2.0f); // OPTIMIZE:: process only sprites in field of view
-
-        if (inner_player_view) {
-          jgui::Image
-            *image = sprite.GetTexture();
-          jgui::jsize_t<int>
-            size = image->GetSize();
-
-          float
-            object_distance = sqrtf(dpos.x*dpos.x + dpos.y*dpos.y),
-            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
-            object_floor = SCREEN_HEIGHT - object_ceiling,
-            object_height = (object_floor - object_ceiling)*size.height,
-            object_ratio = size.height/(float)size.width,
-            object_width = object_height/object_ratio,
-            object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
-
-          for (int i=0; i<object_width; i++) {
-            for (int j=0; j<object_height; j++) {
-              float 
-                sample_x = i/object_width,
-                sample_y = j/object_height;
-              int
-                object_column = (int)(object_center + i - object_width/2.0f);
-              jgui::jpoint_t<int>
-                pos {(int)object_column, (int)(object_ceiling + j)};
-
-              if (pos.x >= 0 and pos.x < SCREEN_WIDTH and pos.y >= 0 and pos.y < SCREEN_HEIGHT) {
-                if (object_distance <= _zbuffer[object_column]) {
-                  uint32_t
-                    pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
-
-                  if (pixel & 0xff000000) {
-                    raster.SetColor(pixel);
-                    raster.SetPixel(pos);
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        sprite.Update();
-      }
-
-      _player.Paint(raster);
+      PaintPlayer(raster);
 
       if (_show_map == true) {
-        jgui::Image 
-          *rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
-        jgui::jpoint_t<int>
-          pos = _player.GetPosition();
-        jgui::jsize_t<int>
-          size = rotate->GetSize();
-        float 
-          arc0 = -_player.GetDirection() + _player.GetFieldOfView()/2.0f,
-          arc1 = -_player.GetDirection() - _player.GetFieldOfView()/2.0f;
-
-        raster.SetColor(0xff808080);
-        raster.FillArc(pos, {100, 100}, arc1, arc0);
-        raster.DrawImage(rotate, {pos.x - size.width/2, pos.y - size.height/2});
-
-        delete rotate;
-
-        for (auto &barrier : _barriers) {
-          barrier.Paint(raster);
-        }
-        
-        for (auto &sprite : _sprites) {
-          sprite.Paint(raster);
-        }
+        PaintMap(raster);
       }
 
       // INFO:: splash screen
