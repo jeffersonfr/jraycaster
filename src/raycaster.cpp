@@ -22,6 +22,8 @@
 #include "jgui/jraster.h"
 #include "jgui/jindexedimage.h"
 #include "jgui/jbufferedimage.h"
+#include "jmedia/jplayermanager.h"
+#include "jmedia/jaudiomixercontrol.h"
 
 #include <algorithm>
 #include <numeric>
@@ -155,7 +157,7 @@ class Sprite {
     virtual ~Sprite()
     {
       for (int i=0; i<(int)_frames.size(); i++) {
-        jgui::Image *image = _frames[i];
+        // jgui::Image *image = _frames[i];
 
         // delete image;
       }
@@ -324,9 +326,29 @@ class Player {
 
     void Paint(jgui::Raster &raster)
     {
+      static float
+        arc = 0.0f;
+      static int
+        range = 32,
+        pos = 0,
+        dir = +1;
+
+      arc = fmod(arc + 0.1, 2*M_PI);
+      pos = pos + dir*(random()%3);
+
+      if (pos < -range) {
+        pos = -range;
+        dir = 1;
+      }
+
+      if (pos > range) {
+        pos = range;
+        dir = -1;
+      }
+
       int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT)/2;
 
-      raster.DrawImage(_frames[(engine_clock/2)%_frames.size()], {(SCREEN_WIDTH - size)/2, SCREEN_HEIGHT - size});
+      raster.DrawImage(_frames[(engine_clock/2)%_frames.size()], {(SCREEN_WIDTH - size)/2 + pos, SCREEN_HEIGHT - 0.9f*size + 0.1*size*sin(arc)});
     }
 
 };
@@ -336,6 +358,12 @@ class Scene : public jgui::Window {
   private:
     std::map<std::string, jgui::Image *>
       _images;
+    jmedia::Player 
+      *_media;
+    jmedia::AudioMixerControl 
+      *_control;
+    jmedia::Audio 
+      *_music;
 		jgui::Image
 			*_scene;
     std::vector<Barrier> 
@@ -397,6 +425,31 @@ class Scene : public jgui::Window {
 					buffer[j*FIRE_SCREEN_WIDTH + i] = 36;
 				}
       }
+
+      // INFO:: init sound system
+      _control = nullptr;
+      _music = nullptr;
+
+      _media= jmedia::PlayerManager::CreatePlayer("mixer://");
+
+      if (_media == nullptr) {
+        return;
+      }
+
+      _control = dynamic_cast<jmedia::AudioMixerControl *>(_media->GetControl("audio.mixer"));
+
+      if (_control == nullptr) {
+        return;
+      }
+
+      _music = _control->CreateAudio("sounds/ambiance.wav");
+
+      if (_music == nullptr) {
+        return;
+      }
+      
+      _music->SetLoopEnabled(true);
+      _control->StartSound(_music);
     }
 
     virtual ~Scene()
@@ -408,6 +461,16 @@ class Scene : public jgui::Window {
 
         delete image;
         image = nullptr;
+      }
+
+      if (_media != nullptr) {
+        _media->Stop();
+        _media->Close();
+      }
+
+      if (_music != nullptr) {
+        delete _music;
+        _music = nullptr;
       }
     }
 
