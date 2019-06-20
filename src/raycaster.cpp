@@ -431,15 +431,17 @@ class Scene : public jgui::Window {
       } else if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
         _player.LookAt(PLAYER_ROTATE);
       } else if (
+          ev->IsKeyDown(jevent::JKS_CURSOR_UP) or
+          ev->IsKeyDown(jevent::JKS_CURSOR_DOWN) or
           ev->IsKeyDown(jevent::JKS_w) or
           ev->IsKeyDown(jevent::JKS_s) or
           ev->IsKeyDown(jevent::JKS_a) or
           ev->IsKeyDown(jevent::JKS_d)) {
         jgui::jpoint_t<int> pos = _player.GetPosition();
 
-        if (ev->IsKeyDown(jevent::JKS_w)) {
+        if (ev->IsKeyDown(jevent::JKS_w) or ev->IsKeyDown(jevent::JKS_CURSOR_UP)) {
           _player.Forward();
-        } else if (ev->IsKeyDown(jevent::JKS_s)) {
+        } else if (ev->IsKeyDown(jevent::JKS_s) or ev->IsKeyDown(jevent::JKS_CURSOR_DOWN)) {
           _player.Backward();
         } else if (ev->IsKeyDown(jevent::JKS_a)) {
           _player.Left();
@@ -537,10 +539,10 @@ class Scene : public jgui::Window {
                             object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
 
 					int
-						random_light = random()%10;
+						random_light = random()%10,
+						opacity = 0xff*sprite.GetOpacity();
 					float
-						shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT),
-						opacity = sprite.GetOpacity();
+						shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
 
           for (int j=0; j<object_height; j++) {
 						int y = object_ceiling + j;
@@ -601,9 +603,9 @@ class Scene : public jgui::Window {
 										dg = (spixel >> 0x08) & 0xff,
 										db = (spixel >> 0x00) & 0xff;
 
-									cr = cr*opacity + dr*(1.0f - opacity);
-									cg = cg*opacity + dg*(1.0f - opacity);
-									cb = cb*opacity + db*(1.0f - opacity);
+									cr = (cr*opacity + dr*(0xff - opacity))/0xff;
+									cg = (cg*opacity + dg*(0xff - opacity))/0xff;
+									cb = (cb*opacity + db*(0xff - opacity))/0xff;
 	
 									raster.SetColor(0xff000000 | cr << 0x10 | cg << 0x08 | cb << 0x00);
 									raster.SetPixel({x, y});
