@@ -24,18 +24,20 @@
 #include "jgui/jbufferedimage.h"
 
 #include <algorithm>
+#include <numeric>
+#include <random>
 
 #define SCREEN_WIDTH 720
 #define SCREEN_HEIGHT 480
 
-#define SCALING_X 64.0f
+#define SCALING_MAP 64.0f
 
-#define PLAYER_STEP 4.0f
+#define PLAYER_STEP 5.0f
 #define PLAYER_FOV (M_PI/3.0f)
 #define PLAYER_ROTATE 0.1f
 
-#define FIRE_SCREEN_WIDTH 240*3
-#define FIRE_SCREEN_HEIGHT 90
+#define FIRE_SCREEN_WIDTH 180*3
+#define FIRE_SCREEN_HEIGHT 75
 
 static uint32_t palette[37] = {
   0xff070707, 0xff1f0707, 0xff2f0f07, 0xff470f07, 
@@ -62,6 +64,8 @@ class Barrier {
     jgui::jpoint_t<int> 
       _p0,
       _p1;
+		float
+			_texture_scale;
 
   public:
     Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
@@ -69,6 +73,7 @@ class Barrier {
       _image = image;
       _p0 = p0;
       _p1 = p1;
+			_texture_scale = 1.0f;
     }
 
     virtual ~Barrier()
@@ -105,6 +110,20 @@ class Barrier {
       return _image;
     }
 
+		void SetTextureScale(float param)
+		{
+			_texture_scale = 1.0f/param;
+
+			if (_texture_scale < 0.0f) {
+				_texture_scale = 0.0f;
+			}
+		}
+
+		float GetTextureScale()
+		{
+			return _texture_scale;
+		}
+
 };
 
 class Sprite {
@@ -114,6 +133,8 @@ class Sprite {
       _frames;
     jgui::jpoint_t<int>
       _pos;
+		float
+			_opacity;
 
   public:
     Sprite(jgui::Image *image, int frames, jgui::jpoint_t<int> pos)
@@ -128,6 +149,7 @@ class Sprite {
       }
 
       _pos = pos;
+			_opacity = 1.0f;
     }
 
     virtual ~Sprite()
@@ -146,13 +168,23 @@ class Sprite {
 
     jgui::Image * GetTexture()
     {
-      return _frames[engine_clock%_frames.size()];
+      return _frames[(engine_clock/2)%_frames.size()];
     }
+
+		void SetOpacity(float opacity)
+		{
+			_opacity = opacity;
+		}
+
+		float GetOpacity()
+		{
+			return _opacity;
+		}
 
     void Update()
     {
-      _pos.x = _pos.x + random()%5 - 2;
-      _pos.y = _pos.y + random()%5 - 2;
+      _pos.x = _pos.x + random()%3 - 1;
+      _pos.y = _pos.y + random()%3 - 1;
 
       if (_pos.x < 0) {
         _pos.x = 0;
@@ -178,110 +210,6 @@ class Sprite {
       raster.DrawImage(scale, {_pos.x - 8, _pos.y - 8});
 
       delete scale;
-    }
-
-};
-
-class Ray {
-
-  private:
-    jgui::jpoint_t<int> 
-      _p0;
-    jgui::jpoint_t<float> 
-      _p1,
-      _px;
-
-  public:
-    Ray(jgui::jpoint_t<int> p0, float angle)
-    {
-      _p0 = p0;
-
-      float 
-        fx = cos(angle),
-        fy = sin(angle);
-      float
-        magnitude = fabs(fx*fx + fy*fy);
-
-      _p1 = {
-        .x = fx/magnitude,
-        .y = fy/magnitude
-      };
-
-      _px = _p1;
-    }
-
-    virtual ~Ray()
-    {
-    }
-
-    jgui::jpoint_t<int> GetPosition() const
-    {
-      return _p0;
-    }
-
-    jgui::jpoint_t<float> GetDirection() const
-    {
-      return _p1;
-    }
-
-    void SetPosition(jgui::jpoint_t<int> point)
-    {
-      _p0 = point;
-    }
-
-    void LookAt(float angle)
-    {
-      float old = atan2f(_p1.y, _p1.x);
-
-      angle = old - angle;
-
-      float 
-        fx = cos(angle),
-        fy = sin(angle);
-      float
-        magnitude = fabs(fx*fx + fy*fy);
-
-      _p1 = {
-        .x = fx/magnitude,
-        .y = fy/magnitude
-      };
-    }
-
-    std::pair<float, jgui::jpoint_t<int>> Cast(Barrier &barrier) const
-    {
-      std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> segment = barrier.GetSegment();
-
-      const float x1 = segment.first.x;
-      const float y1 = segment.first.y;
-      const float x2 = segment.second.x;
-      const float y2 = segment.second.y;
-
-      const float x3 = _p0.x;
-      const float y3 = _p0.y;
-      const float x4 = _p0.x + _p1.x;
-      const float y4 = _p0.y + _p1.y;
-
-      const float den = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4);
-
-      std::pair<float, jgui::jpoint_t<int>> result = std::make_pair(-1.0f, jgui::jpoint_t<int>{-1, -1});
-
-      if (den == 0) {
-        return result;
-      }
-
-      const float t = ((x1 - x3)*(y3 - y4) - (y1 - y3)*(x3 - x4))/den;
-      const float u = -((x1 - x2)*(y1 - y3) - (y1 - y2)*(x1 - x3))/den;
-
-      if (t > 0.0f and t < 1.0f and u > 0.0f) {
-        result = std::make_pair(t, jgui::jpoint_t<int>{(int)(x1 + t*(x2 - x1)), (int)(y1 + t*(y2 - y1))});
-      }
-
-      return result;
-    }
-
-    void Paint(jgui::Raster &raster)
-    {
-      raster.DrawLine(_p0, {(int)(_p0.x + 10*_p1.x), (int)(_p0.y + 10*_p1.y)});
     }
 
 };
@@ -393,6 +321,8 @@ class Scene : public jgui::Window {
   private:
     std::map<std::string, jgui::Image *>
       _images;
+		jgui::Image
+			*_scene;
     std::vector<Barrier> 
       _barriers;
     std::vector<Sprite> 
@@ -410,6 +340,10 @@ class Scene : public jgui::Window {
       jgui::Window(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT),
       _player(PLAYER_FOV)
     {
+			_scene = new jgui::BufferedImage(jgui::JPF_RGB32, {SCREEN_WIDTH, SCREEN_HEIGHT});
+
+			_scene->GetGraphics()->SetAntialias(jgui::JAM_NONE);
+
       _images["splash"] = new jgui::BufferedImage("images/splash.png");
       _images["wall0"] = new jgui::BufferedImage("images/greystone.png");
       _images["wall1"] = new jgui::BufferedImage("images/skulls.png");
@@ -434,6 +368,8 @@ class Scene : public jgui::Window {
           };
 
         _sprites.emplace_back(_images["ghost"], 4, pos);
+
+				_sprites.rbegin()->SetOpacity(0.5f);
       }
 
       _player.SetPosition(jgui::jpoint_t<int>{200, 250});
@@ -446,8 +382,6 @@ class Scene : public jgui::Window {
 					buffer[j*FIRE_SCREEN_WIDTH + i] = 36;
 				}
       }
-
-      SetResizable(false);
     }
 
     virtual ~Scene()
@@ -493,34 +427,22 @@ class Scene : public jgui::Window {
         }
       
 				for (auto barrier : _barriers) {
-          std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>>
+					std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>>
 						segment = barrier.GetSegment();
-					jgui::jpoint_t<int>
-						point = _player.GetPosition();
+					float 
+						distance = DistanceBetweenPointAndLine(segment.first, segment.second, _player.GetPosition());
 
-          // INFO:: distance from a point to a line segment
-					float
-            px = segment.second.x - segment.first.x,
-            py = segment.second.y - segment.first.y,
-            delta = px*px + py*py,
-            u = ((point.x - segment.first.x)*px + (point.y - segment.first.y)*py)/delta;
+					if (distance < 0) { // INFO:: there isnt a perpendicular distance to line segment
+						continue;
+					}
+						
+					if (distance < 8) { // INFO:: minumum perpendicular distance to wall
+						_player.SetPosition(pos);
 
-          if (u >= 0.0f and u <= 1.0f) { // INFO:: point in a line segment
-            float
-              x = segment.first.x + u*px,
-              y = segment.first.y + u*py,
-              dx = x - point.x,
-              dy = y - point.y,
-              distance = sqrtf(dx*dx + dy*dy);
-
-            if (distance < 8) { // INFO:: minumum perpendicular distance to wall
-              _player.SetPosition(pos);
-
-              return;
-            }
-          }
+						return;
+					}
 				}
-      }
+			}
     }
 
     void Framerate(int fps)
@@ -593,27 +515,79 @@ class Scene : public jgui::Window {
                             object_width = object_height/object_ratio,
                             object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
 
-          for (int i=0; i<object_width; i++) {
-            for (int j=0; j<object_height; j++) {
+					int
+						random_light = random()%10;
+					float
+						shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT),
+						opacity = sprite.GetOpacity();
+
+          for (int j=0; j<object_height; j++) {
+						int y = object_ceiling + j;
+
+						if (y < 0) {
+							continue;
+						}
+
+						if (y >= SCREEN_HEIGHT) {
+							break;
+						}
+
+          	for (int i=0; i<object_width; i++) {
               float 
                 sample_x = i/object_width,
-                         sample_y = j/object_height;
+                sample_y = j/object_height;
               int
-                object_column = (int)(object_center + i - object_width/2.0f);
-              jgui::jpoint_t<int>
-                pos {(int)object_column, (int)(object_ceiling + j)};
+                x = (int)(object_center + i - object_width/2.0f);
 
-              if (pos.x >= 0 and pos.x < SCREEN_WIDTH and pos.y >= 0 and pos.y < SCREEN_HEIGHT) {
-                if (object_distance <= _zbuffer[object_column]) {
-                  uint32_t
-                    pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
+							if (x < 0) {
+								continue;
+							}
 
-                  if (pixel & 0xff000000) {
-                    raster.SetColor(pixel);
-                    raster.SetPixel(pos);
-                  }
-                }
-              }
+							if (x >= SCREEN_WIDTH) {
+								break;
+							}
+
+							if (object_distance <= _zbuffer[x]) {
+								uint32_t
+									pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
+
+								if (pixel & 0xff000000) {
+									int
+										cr = (pixel >> 0x10) & 0xff,
+										cg = (pixel >> 0x08) & 0xff,
+										cb = (pixel >> 0x00) & 0xff;
+
+									cr = cr*shadow;
+									cg = cg*shadow;
+									cb = cb*shadow;
+
+									if (cr < 0x00) {
+										cr = 0x00;
+									}
+
+									if (cg < 0x00) {
+										cg = 0x00;
+									}
+
+									if (cb < 0x00) {
+										cb = 0x00;
+									}
+
+									uint32_t
+										spixel = raster.GetPixel({x, y});
+									int
+										dr = (spixel >> 0x10) & 0xff,
+										dg = (spixel >> 0x08) & 0xff,
+										db = (spixel >> 0x00) & 0xff;
+
+									cr = cr*opacity + dr*(1.0f - opacity);
+									cg = cg*opacity + dg*(1.0f - opacity);
+									cb = cb*opacity + db*(1.0f - opacity);
+	
+									raster.SetColor(0xff000000 | cr << 0x10 | cg << 0x08 | cb << 0x00);
+									raster.SetPixel({x, y});
+								}
+							}
             }
           }
         }
@@ -664,9 +638,11 @@ class Scene : public jgui::Window {
         size = rotate->GetSize();
       float 
         arc0 = -_player.GetDirection() + _player.GetFieldOfView()/2.0f,
-             arc1 = -_player.GetDirection() - _player.GetFieldOfView()/2.0f;
+        arc1 = -_player.GetDirection() - _player.GetFieldOfView()/2.0f;
+			int 
+				color = 0x80 + random()%64 - 32;
 
-      raster.SetColor(0xff808080);
+      raster.SetColor(0xff000000 | color << 0x10 | color << 0x08 | color);
       raster.FillArc(pos, {100, 100}, arc1, arc0);
       raster.DrawImage(rotate, {pos.x - size.width/2, pos.y - size.height/2});
 
@@ -681,43 +657,96 @@ class Scene : public jgui::Window {
       }
     }
 
+		/**
+     * Detects if two line segments cross. t and u is the position of each line, if the interval is [0..1].
+		 */
+    std::pair<float, jgui::jpoint_t<int>> Cast(jgui::jpoint_t<int> pos, float angle, Barrier &barrier) const
+    {
+      std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> segment = barrier.GetSegment();
+
+      const float x1 = segment.first.x;
+      const float y1 = segment.first.y;
+      const float x2 = segment.second.x;
+      const float y2 = segment.second.y;
+
+      const float x3 = pos.x;
+      const float y3 = pos.y;
+      const float x4 = pos.x + cos(angle);
+      const float y4 = pos.y + sin(angle);
+
+      const float den = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4);
+
+      std::pair<float, jgui::jpoint_t<int>> result = std::make_pair(-1.0f, jgui::jpoint_t<int>{-1, -1});
+
+      if (den == 0) {
+        return result;
+      }
+
+      const float t = ((x1 - x3)*(y3 - y4) - (y1 - y3)*(x3 - x4))/den;
+      const float u = -((x1 - x2)*(y1 - y3) - (y1 - y2)*(x1 - x3))/den;
+
+      if (t > 0.0f and t < 1.0f and u > 0.0f) {
+        result = std::make_pair(t, jgui::jpoint_t<int>{(int)(x1 + t*(x2 - x1)), (int)(y1 + t*(y2 - y1))});
+      }
+
+      return result;
+    }
+
+		float DistanceBetweenPointAndLine(jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1, jgui::jpoint_t<int> point)
+		{
+			// INFO:: distance from a point to a line segment
+			float
+				px = p1.x - p0.x,
+				py = p1.y - p0.y,
+				u = ((point.x - p0.x)*px + (point.y - p0.y)*py)/(px*px + py*py);
+
+			if (u >= 0.0f and u <= 1.0f) { // INFO:: point in a line segment
+				float
+					x = p0.x + u*px,
+					y = p0.y + u*py,
+					dx = x - point.x,
+					dy = y - point.y;
+
+				return sqrtf(dx*dx + dy*dy);
+			}
+
+			return -1.0f;
+		}
+
     void Paint(jgui::Graphics *g) 
     {
-      jgui::Raster raster((uint32_t *)cairo_image_surface_get_data(g->GetCairoSurface()), GetSize());
+      jgui::Raster raster((uint32_t *)cairo_image_surface_get_data(_scene->GetGraphics()->GetCairoSurface()), _scene->GetSize());
 
       raster.Clear();
 
-      // INFO:: fire
-      jgui::jsize_t<int>
-        size = GetSize();
- 
       PaintFire(raster);
 
 			// INFO:: key handling
       KeyHandle();
 
       // INFO:: draw walls
-      int random_light = random()%10;
+			jgui::jpoint_t<int>
+				pos = _player.GetPosition();
+      int 
+				random_light = random()%10;
 
       // INFO:: 3d map
       for (int i=0; i<SCREEN_WIDTH; i++) {
-				Ray ray(_player.GetPosition(), -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection());
-
         std::pair<float, jgui::jpoint_t<int>> 
           best = {-1.0f, {9999, 9999}};
         Barrier 
           *pbarrier = nullptr;
-        jgui::jpoint_t<int> 
-          pray = ray.GetPosition();
+				float
+					angle = -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection();
         int 
-          d0 = (pray.x - best.second.x)*(pray.x - best.second.x) + (pray.y - best.second.y)*(pray.y - best.second.y);
+          d0 = (pos.x - best.second.x)*(pos.x - best.second.x) + (pos.y - best.second.y)*(pos.y - best.second.y);
 
         for (auto &barrier : _barriers) {
-          std::pair<float, jgui::jpoint_t<int>> point = ray.Cast(barrier);
+          std::pair<float, jgui::jpoint_t<int>> point = Cast(pos, angle, barrier);
 
           if (point.first >= 0.0f) {
             int 
-              d1 = (pray.x - point.second.x)*(pray.x - point.second.x) + (pray.y - point.second.y)*(pray.y - point.second.y);
+              d1 = (pos.x - point.second.x)*(pos.x - point.second.x) + (pos.y - point.second.y)*(pos.y - point.second.y);
 
             if (d1 < d0) {
               best = point;
@@ -738,7 +767,7 @@ class Scene : public jgui::Window {
         float
           cosf = cos(-_player.GetFieldOfView()/2.0f + (i*_player.GetFieldOfView())/(float)SCREEN_WIDTH);
         int
-          wall = (SCREEN_HEIGHT*SCALING_X)/(d0*cosf);
+          wall = (SCREEN_HEIGHT*SCALING_MAP)/(d0*cosf);
         float
           distance = (50.0f + 10.0f/(random_light + 1.0f))/d0;
 
@@ -759,14 +788,20 @@ class Scene : public jgui::Window {
             *texture = pbarrier->GetTexture();
           jgui::jsize_t<int>
             tsize = texture->GetSize();
+					float
+						scale = pbarrier->GetTextureScale();
           int 
-            index = (int)(best.first*pbarrier->GetSize())%tsize.width;
+            index = (int)(best.first*tsize.width);
+
+					if (scale != 0.0f) {
+            index = (int)(best.first*pbarrier->GetSize()*scale)%tsize.width;
+					}
 
           // INFO:: casting walls
           for (int j=SCREEN_HEIGHT/2 - wall; j<SCREEN_HEIGHT/2 + wall; j++) {
             if (j > 0 and j < SCREEN_HEIGHT) {
-              int size = j - SCREEN_HEIGHT/2 + wall;
-
+              int 
+								size = j - SCREEN_HEIGHT/2 + wall;
               uint32_t
                 pixel = texture->GetGraphics()->GetRGB({index, (tsize.height*size)/(2*wall)});
               uint8_t
@@ -811,6 +846,8 @@ class Scene : public jgui::Window {
         }
       }
 
+			g->Flush();
+
       PaintSprites(raster);
 
       PaintPlayer(raster);
@@ -823,8 +860,10 @@ class Scene : public jgui::Window {
       static int splash_timer = 0;
 
       if (splash_timer++ < 100) {
-        g->DrawImage(_images["splash"], {0, 0, size});
+        _scene->GetGraphics()->DrawImage(_images["splash"], {0, 0, _scene->GetSize()});
       }
+
+			g->DrawImage(_scene, {{0, 0}, GetSize()});
 
       engine_clock++;
 
