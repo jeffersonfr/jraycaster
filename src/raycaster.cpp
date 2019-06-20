@@ -297,14 +297,29 @@ class Player {
       _dir = fmod(_dir, 2.0f*M_PI);
     }
 
+		void Step(int signal, float angle)
+		{
+      SetPosition({(int)(_pos.x + signal*PLAYER_STEP*cos(_dir + angle)), (int)(_pos.y + signal*PLAYER_STEP*sin(_dir + angle))});
+		}
+
+    void Left()
+    {
+			Step(+1, -M_PI/2.0f);
+    }
+
+    void Right()
+    {
+			Step(+1, M_PI/2.0f);
+    }
+
     void Forward()
     {
-      SetPosition({(int)(_pos.x + PLAYER_STEP*cos(_dir)), (int)(_pos.y + PLAYER_STEP*sin(_dir))});
+			Step(+1, 0.0f);
     }
 
     void Backward()
     {
-      SetPosition({(int)(_pos.x - PLAYER_STEP*cos(_dir)), (int)(_pos.y - PLAYER_STEP*sin(_dir))});
+			Step(-1, 0.0f);
     }
 
     void Paint(jgui::Raster &raster)
@@ -416,14 +431,20 @@ class Scene : public jgui::Window {
       } else if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
         _player.LookAt(PLAYER_ROTATE);
       } else if (
-          ev->IsKeyDown(jevent::JKS_CURSOR_UP) or
-          ev->IsKeyDown(jevent::JKS_CURSOR_DOWN)) {
+          ev->IsKeyDown(jevent::JKS_w) or
+          ev->IsKeyDown(jevent::JKS_s) or
+          ev->IsKeyDown(jevent::JKS_a) or
+          ev->IsKeyDown(jevent::JKS_d)) {
         jgui::jpoint_t<int> pos = _player.GetPosition();
 
-        if (ev->IsKeyDown(jevent::JKS_CURSOR_UP)) {
+        if (ev->IsKeyDown(jevent::JKS_w)) {
           _player.Forward();
-        } else {
+        } else if (ev->IsKeyDown(jevent::JKS_s)) {
           _player.Backward();
+        } else if (ev->IsKeyDown(jevent::JKS_a)) {
+          _player.Left();
+        } else if (ev->IsKeyDown(jevent::JKS_d)) {
+          _player.Right();
         }
       
 				for (auto barrier : _barriers) {
