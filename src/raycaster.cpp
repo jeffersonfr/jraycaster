@@ -82,9 +82,9 @@ class Barrier {
     {
     }
 
-    std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> GetSegment()
+    jgui::jline_t<int> GetSegment()
     {
-      return {_p0, _p1};
+      return jgui::jline_t<int>{_p0, _p1};
     }
 
     float GetSize()
@@ -348,7 +348,7 @@ class Player {
 
       int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT)/2;
 
-      raster.DrawImage(_frames[(engine_clock/2)%_frames.size()], {(SCREEN_WIDTH - size)/2 + pos, SCREEN_HEIGHT - 0.9f*size + 0.1*size*sin(arc)});
+      raster.DrawImage(_frames[(engine_clock/2)%_frames.size()], {(SCREEN_WIDTH - size)/2 + pos, (int)(SCREEN_HEIGHT - 0.9f*size + 0.1f*size*sin(arc))});
     }
 
 };
@@ -511,24 +511,25 @@ class Scene : public jgui::Window {
         } else if (ev->IsKeyDown(jevent::JKS_d)) {
           _player.Right();
         }
-      
-				for (auto barrier : _barriers) {
-					std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>>
-						segment = barrier.GetSegment();
-					float 
-						distance = DistanceBetweenPointAndLine(segment.first, segment.second, _player.GetPosition());
 
-					if (distance < 0) { // INFO:: there isnt a perpendicular distance to line segment
-						continue;
-					}
-						
-					if (distance < 8) { // INFO:: minumum perpendicular distance to wall
-						_player.SetPosition(pos);
+        for (auto barrier : _barriers) {
+          float
+            t = barrier.GetSegment().PerpendicularIntersection(_player.GetPosition());
 
-						return;
-					}
-				}
-			}
+          if (t < 0.0f or t > 1.0f) {
+            continue;
+          }
+
+          float
+            distance = barrier.GetSegment().Point(t).Distance(_player.GetPosition());
+
+          if (distance < 8.0f) { // INFO:: minumum perpendicular distance to wall
+            _player.SetPosition(pos);
+
+            return;
+          }
+        }
+      }
     }
 
     void Framerate(int fps)
@@ -554,20 +555,12 @@ class Scene : public jgui::Window {
         ppos = _player.GetPosition();
 
       std::sort(_sprites.begin(), _sprites.end(), [&](Sprite &s1, Sprite &s2) {
-          jgui::jpoint_t<int>
-          p1 = s1.GetPosition(),
-          p2 = s2.GetPosition();
-          jgui::jpoint_t<float>
-          d1 {(float)(p1.x - ppos.x), (float)(p1.y - ppos.y)},
-          d2 {(float)(p2.x - ppos.x), (float)(p2.y - ppos.y)};
-
-          return (d1.x*d1.x + d1.y*d1.y) > (d2.x*d2.x + d2.y*d2.y);
-          });
+        return ppos.Distance(s1.GetPosition()) > ppos.Distance(s2.GetPosition());
+      });
 
       for (auto &sprite : _sprites) {
         jgui::jpoint_t<int>
-          spos = sprite.GetPosition(),
-               dpos = {spos.x - ppos.x, spos.y - ppos.y};
+          dpos = sprite.GetPosition() - ppos;
         float
           object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
 
@@ -594,18 +587,17 @@ class Scene : public jgui::Window {
 
           float
             object_distance = sqrtf(dpos.x*dpos.x + dpos.y*dpos.y),
-                            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
-                            object_floor = SCREEN_HEIGHT - object_ceiling,
-                            object_height = (object_floor - object_ceiling)*size.height,
-                            object_ratio = size.height/(float)size.width,
-                            object_width = object_height/object_ratio,
-                            object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
-
-					int
-						random_light = random()%10,
-						opacity = 0xff*sprite.GetOpacity();
-					float
-						shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
+            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
+            object_floor = SCREEN_HEIGHT - object_ceiling,
+            object_height = (object_floor - object_ceiling)*size.height,
+            object_ratio = size.height/(float)size.width,
+            object_width = object_height/object_ratio,
+            object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
+          int
+            random_light = random()%10,
+            opacity = 0xff*sprite.GetOpacity();
+          float
+            shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
 
           for (int j=0; j<object_height; j++) {
 						int y = object_ceiling + j;
@@ -743,62 +735,6 @@ class Scene : public jgui::Window {
       }
     }
 
-		/**
-     * Detects if two line segments cross. t and u is the position of each line, if the interval is [0..1].
-		 */
-    std::pair<float, jgui::jpoint_t<int>> Cast(jgui::jpoint_t<int> pos, float angle, Barrier &barrier) const
-    {
-      std::pair<jgui::jpoint_t<int>, jgui::jpoint_t<int>> segment = barrier.GetSegment();
-
-      const float x1 = segment.first.x;
-      const float y1 = segment.first.y;
-      const float x2 = segment.second.x;
-      const float y2 = segment.second.y;
-
-      const float x3 = pos.x;
-      const float y3 = pos.y;
-      const float x4 = pos.x + cos(angle);
-      const float y4 = pos.y + sin(angle);
-
-      const float den = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4);
-
-      std::pair<float, jgui::jpoint_t<int>> result = std::make_pair(-1.0f, jgui::jpoint_t<int>{-1, -1});
-
-      if (den == 0) {
-        return result;
-      }
-
-      const float t = ((x1 - x3)*(y3 - y4) - (y1 - y3)*(x3 - x4))/den;
-      const float u = -((x1 - x2)*(y1 - y3) - (y1 - y2)*(x1 - x3))/den;
-
-      if (t > 0.0f and t < 1.0f and u > 0.0f) {
-        result = std::make_pair(t, jgui::jpoint_t<int>{(int)(x1 + t*(x2 - x1)), (int)(y1 + t*(y2 - y1))});
-      }
-
-      return result;
-    }
-
-		float DistanceBetweenPointAndLine(jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1, jgui::jpoint_t<int> point)
-		{
-			// INFO:: distance from a point to a line segment
-			float
-				px = p1.x - p0.x,
-				py = p1.y - p0.y,
-				u = ((point.x - p0.x)*px + (point.y - p0.y)*py)/(px*px + py*py);
-
-			if (u >= 0.0f and u <= 1.0f) { // INFO:: point in a line segment
-				float
-					x = p0.x + u*px,
-					y = p0.y + u*py,
-					dx = x - point.x,
-					dy = y - point.y;
-
-				return sqrtf(dx*dx + dy*dy);
-			}
-
-			return -1.0f;
-		}
-
     void Paint(jgui::Graphics *g) 
     {
       jgui::Raster raster((uint32_t *)cairo_image_surface_get_data(_scene->GetGraphics()->GetCairoSurface()), _scene->GetSize());
@@ -825,14 +761,19 @@ class Scene : public jgui::Window {
 				float
 					angle = -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection();
         int 
-          d0 = (pos.x - best.second.x)*(pos.x - best.second.x) + (pos.y - best.second.y)*(pos.y - best.second.y);
+          d0 = (pos - best.second).Norm();
 
         for (auto &barrier : _barriers) {
-          std::pair<float, jgui::jpoint_t<int>> point = Cast(pos, angle, barrier);
+          jgui::jline_t<float>
+            ray = {pos, jgui::jpoint_t<float>(pos) + jgui::jpoint_t<float>{cos(angle), sin(angle)}};
+          std::pair<float, float> 
+            tu = barrier.GetSegment().Intersection(ray);
 
-          if (point.first >= 0.0f) {
+          if (tu.first > 0.0f and tu.first < 1.0f and tu.second > 0.0f) { // INFO:: if the ray intersects the barrier segment (first:barrier, second:ray)
+            std::pair<float, jgui::jpoint_t<int>> 
+              point = std::make_pair(tu.first, barrier.GetSegment().Point(tu.first));
             int 
-              d1 = (pos.x - point.second.x)*(pos.x - point.second.x) + (pos.y - point.second.y)*(pos.y - point.second.y);
+              d1 = (pos - point.second).Norm();
 
             if (d1 < d0) {
               best = point;
