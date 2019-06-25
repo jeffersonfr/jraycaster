@@ -63,9 +63,8 @@ class Barrier {
   private:
     jgui::Image 
       *_image;
-    jgui::jpoint_t<int> 
-      _p0,
-      _p1;
+    jgui::jline_t<int> 
+      _line;
 		float
 			_texture_scale;
 
@@ -73,8 +72,7 @@ class Barrier {
     Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
     {
       _image = image;
-      _p0 = p0;
-      _p1 = p1;
+      _line = {p0, p1};
 			_texture_scale = 1.0f;
     }
 
@@ -84,22 +82,18 @@ class Barrier {
 
     jgui::jline_t<int> GetSegment()
     {
-      return jgui::jline_t<int>{_p0, _p1};
+      return _line;
     }
 
     float GetSize()
     {
-      int 
-        x = _p0.x - _p1.x,
-        y = _p0.y - _p1.y;
-
-      return sqrtf(x*x + y*y);
+      return _line.Size();
     }
 
     void Paint(jgui::Raster &raster)
     {
       raster.SetColor(0xffff0000);
-      raster.DrawLine(_p0, _p1);
+      raster.DrawLine(_line.p0, _line.p1);
     }
 
     void SetTexture(jgui::Image *image)
@@ -185,8 +179,7 @@ class Sprite {
 
     void Update()
     {
-      _pos.x = _pos.x + random()%3 - 1;
-      _pos.y = _pos.y + random()%3 - 1;
+      _pos = _pos + jgui::jpoint_t<long int>{random()%3 - 1, random()%3 - 1};
 
       if (_pos.x < 0) {
         _pos.x = 0;
@@ -301,7 +294,7 @@ class Player {
 
 		void Step(int signal, float angle)
 		{
-      SetPosition({(int)(_pos.x + signal*PLAYER_STEP*cos(_dir + angle)), (int)(_pos.y + signal*PLAYER_STEP*sin(_dir + angle))});
+      SetPosition(_pos + jgui::jpoint_t<float>{signal*PLAYER_STEP*cos(_dir + angle), signal*PLAYER_STEP*sin(_dir + angle)});
 		}
 
     void Left()
@@ -404,7 +397,7 @@ class Scene : public jgui::Window {
             jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
       }
       
-      for (int i=0; i<10; i++) {
+      for (int i=0; i<1; i++) {
         jgui::jpoint_t<int>
           pos = {
             (int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)
@@ -561,20 +554,18 @@ class Scene : public jgui::Window {
       for (auto &sprite : _sprites) {
         jgui::jpoint_t<int>
           dpos = sprite.GetPosition() - ppos;
-        float
-          object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
+        float 
+          object_angle = fmod(_player.GetDirection() - dpos.Angle(), 2*M_PI);
 
-        if (dpos.x < 0) {
-          object_angle = object_angle + M_PI;
+        if (object_angle < -M_PI) {
+          object_angle = 2*M_PI + object_angle;
         }
 
-        object_angle = fmod(object_angle + _player.GetFieldOfView()/2, 2.0f*M_PI);
-
-        if (object_angle < 0.0f) {
-          object_angle = object_angle + 2.0f*M_PI;
+        if (object_angle > M_PI) {
+          object_angle = 2*M_PI - object_angle;
         }
 
-        object_angle = object_angle - _player.GetFieldOfView()/2.0f;
+        object_angle = -object_angle;
 
         bool
           inner_player_view = fabs(object_angle) < (_player.GetFieldOfView()/2.0f); // OPTIMIZE:: process only sprites in field of view
@@ -760,7 +751,7 @@ class Scene : public jgui::Window {
           *pbarrier = nullptr;
 				float
 					angle = -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection();
-        int 
+        float 
           d0 = (pos - best.second).Norm();
 
         for (auto &barrier : _barriers) {
@@ -772,7 +763,7 @@ class Scene : public jgui::Window {
           if (tu.first > 0.0f and tu.first < 1.0f and tu.second > 0.0f) { // INFO:: if the ray intersects the barrier segment (first:barrier, second:ray)
             std::pair<float, jgui::jpoint_t<int>> 
               point = std::make_pair(tu.first, barrier.GetSegment().Point(tu.first));
-            int 
+            float
               d1 = (pos - point.second).Norm();
 
             if (d1 < d0) {
@@ -806,7 +797,7 @@ class Scene : public jgui::Window {
 
         if (_show_flat == true) {
           int
-            color = 0xf0*distance;
+            color = 0xff*distance;
 
           raster.SetColor(0xff000000 | color << 16 | color << 8 | color);
           raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
