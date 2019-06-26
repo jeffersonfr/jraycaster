@@ -65,8 +65,36 @@ class Barrier {
       *_image;
     jgui::jline_t<int> 
       _line;
+    jgui::jpoint_t<int>
+      _center;
+    float
+      _radius;
 		float
 			_texture_scale;
+    bool
+      _is_line;
+
+  private:
+    std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>> FindLineCircleIntersections(jgui::jline_t<float> line, jgui::jpoint_t<float> center, float radius)
+    {
+      float 
+        dx = line.p1.x - line.p0.x, 
+        dy = line.p1.y - line.p0.y, 
+        A = dx * dx + dy * dy,
+        B = 2 * (dx * (line.p0.x - center.x) + dy * (line.p0.y - center.y)),
+        C = (line.p0.x - center.x) * (line.p0.x - center.x) + (line.p0.y - center.y) * (line.p0.y - center.y) - radius * radius,
+        det = B * B - 4 * A * C;
+
+      if ((A <= 0.0000001) || (det < 0)) { // No real solutions.
+        return {{NAN, NAN}, {NAN, NAN}};
+      }
+
+      float
+        t0 = (float)((-B + sqrtf(det)) / (2 * A)),
+        t1 = (float)((-B - sqrtf(det)) / (2 * A));
+
+      return {{line.p0.x + t0 * dx, line.p0.y + t0 * dy}, {line.p0.x + t1 * dx, line.p0.y + t1 * dy}};
+    }
 
   public:
     Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
@@ -74,26 +102,87 @@ class Barrier {
       _image = image;
       _line = {p0, p1};
 			_texture_scale = 1.0f;
+      _is_line = true;
+    }
+
+    Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, float radius)
+    {
+      _image = image;
+      // _line = {p0, p1};
+      _center = p0;
+      _radius = radius;
+			_texture_scale = 1.0f;
+      _is_line = false;
     }
 
     virtual ~Barrier()
     {
     }
 
-    jgui::jline_t<int> GetSegment()
+    std::pair<float, jgui::jpoint_t<int>> Intersection(jgui::jline_t<float> line)
     {
-      return _line;
+      if (_is_line) {
+        std::pair<float, float> 
+          tu = _line.Intersection(line);
+
+        if (tu.first < 0.0f or tu.first > 1.0f or tu.second < 0.0f) {
+          return {-1.0f, {0, 0}};
+        }
+
+        return {tu.first, _line.Point(tu.first)};
+      }
+
+      std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>> 
+        points = FindLineCircleIntersections(line, _center, _radius);
+
+      if (points.first.x != NAN) {
+        float
+          angle = (points.second - _center).Angle();
+
+        if (line.p0.Distance(points.first) < line.p0.Distance(points.second)) { // INFO:: hack to avoid a concave version of circle behind of player
+          return {-1.0f, {0, 0}};
+        }
+
+        return {angle/(2*M_PI), points.second};
+      }
+    }
+
+    float Distance(jgui::jpoint_t<float> point)
+    {
+      if (_is_line) {
+        float
+          t = _line.PerpendicularIntersection(point);
+
+        if (t < 0.0f or t > 1.0f) {
+          return NAN;
+        }
+
+        return _line.Point(t).Distance(point);
+      }
+
+      return _center.Distance(point) - _radius;
     }
 
     float GetSize()
     {
-      return _line.Size();
+      if (_is_line) {
+        return _line.Size();
+      }
+
+      return 2*M_PI*_radius;
     }
 
     void Paint(jgui::Raster &raster)
     {
       raster.SetColor(0xffff0000);
-      raster.DrawLine(_line.p0, _line.p1);
+
+      if (_is_line) {
+        raster.DrawLine(_line.p0, _line.p1);
+
+        return;
+      }
+
+      raster.DrawCircle(_center, _radius);
     }
 
     void SetTexture(jgui::Image *image)
@@ -392,6 +481,10 @@ class Scene : public jgui::Window {
       _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, SCREEN_HEIGHT});
       _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, 0});
 
+      // circle barrier
+      _barriers.emplace_back(_images["wall1"], 
+          jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, 30);
+
       for (int i=0; i<3; i++) {
         _barriers.emplace_back(_images["wall1"], 
             jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
@@ -506,17 +599,7 @@ class Scene : public jgui::Window {
         }
 
         for (auto barrier : _barriers) {
-          float
-            t = barrier.GetSegment().PerpendicularIntersection(_player.GetPosition());
-
-          if (t < 0.0f or t > 1.0f) {
-            continue;
-          }
-
-          float
-            distance = barrier.GetSegment().Point(t).Distance(_player.GetPosition());
-
-          if (distance < 8.0f) { // INFO:: minumum perpendicular distance to wall
+          if (barrier.Distance(_player.GetPosition()) < 8.0f) { // INFO:: minumum perpendicular distance to wall
             _player.SetPosition(pos);
 
             return;
@@ -554,6 +637,24 @@ class Scene : public jgui::Window {
       for (auto &sprite : _sprites) {
         jgui::jpoint_t<int>
           dpos = sprite.GetPosition() - ppos;
+        float
+          object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
+
+        if (dpos.x < 0) {
+          object_angle = object_angle + M_PI;
+        }
+
+        object_angle = fmod(object_angle + _player.GetFieldOfView()/2, 2.0f*M_PI);
+
+        if (object_angle < 0.0f) {
+          object_angle = object_angle + 2.0f*M_PI;
+        }
+
+        object_angle = object_angle - _player.GetFieldOfView()/2.0f;
+
+        /*
+        jgui::jpoint_t<int>
+          dpos = sprite.GetPosition() - ppos;
         float 
           object_angle = fmod(_player.GetDirection() - dpos.Angle(), 2*M_PI);
 
@@ -566,6 +667,7 @@ class Scene : public jgui::Window {
         }
 
         object_angle = -object_angle;
+        */
 
         bool
           inner_player_view = fabs(object_angle) < (_player.GetFieldOfView()/2.0f); // OPTIMIZE:: process only sprites in field of view
@@ -754,20 +856,19 @@ class Scene : public jgui::Window {
         float 
           d0 = (pos - best.second).Norm();
 
+        // circle
         for (auto &barrier : _barriers) {
           jgui::jline_t<float>
             ray = {pos, jgui::jpoint_t<float>(pos) + jgui::jpoint_t<float>{cos(angle), sin(angle)}};
-          std::pair<float, float> 
-            tu = barrier.GetSegment().Intersection(ray);
+          std::pair<float, jgui::jpoint_t<int>> 
+            intersection = barrier.Intersection(ray);
 
-          if (tu.first > 0.0f and tu.first < 1.0f and tu.second > 0.0f) { // INFO:: if the ray intersects the barrier segment (first:barrier, second:ray)
-            std::pair<float, jgui::jpoint_t<int>> 
-              point = std::make_pair(tu.first, barrier.GetSegment().Point(tu.first));
+          if (intersection.first >= 0.0f) {
             float
-              d1 = (pos - point.second).Norm();
+              d1 = (pos - intersection.second).Norm();
 
             if (d1 < d0) {
-              best = point;
+              best = intersection;
               d0 = d1;
               pbarrier = &barrier;
             }
@@ -863,8 +964,6 @@ class Scene : public jgui::Window {
           }
         }
       }
-
-			g->Flush();
 
       PaintSprites(raster);
 
