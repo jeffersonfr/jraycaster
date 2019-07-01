@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.0)
 
 include_directories(
-  ${jlibcpp_INCLUDE_DIRS}
+  ${JLIBCPP_INCLUDE_DIRS}
 )
 
 add_executable(raycaster
@@ -9,8 +9,10 @@ add_executable(raycaster
   )
 
 target_link_libraries(raycaster
-    ${jlibcpp_LIBRARIES}
+  ${JLIBCPP_LIBRARIES}
   )
+
+add_definitions(${JLIBCPP_CFLAGS})
 
 file(
   COPY ${CMAKE_CURRENT_SOURCE_DIR}/images 

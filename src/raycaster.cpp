@@ -54,9 +54,11 @@ static uint32_t palette[37] = {
   0xffffffff
 };
 
-static uint8_t buffer[FIRE_SCREEN_HEIGHT*FIRE_SCREEN_WIDTH];
+static uint32_t 
+  engine_clock = 0;
 
-static uint32_t engine_clock = 0;
+static uint8_t 
+  buffer[FIRE_SCREEN_HEIGHT*FIRE_SCREEN_WIDTH];
 
 class Barrier {
 
@@ -73,28 +75,6 @@ class Barrier {
 			_texture_scale;
     bool
       _is_line;
-
-  private:
-    std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>> FindLineCircleIntersections(jgui::jline_t<float> line, jgui::jpoint_t<float> center, float radius)
-    {
-      float 
-        dx = line.p1.x - line.p0.x, 
-        dy = line.p1.y - line.p0.y, 
-        A = dx * dx + dy * dy,
-        B = 2 * (dx * (line.p0.x - center.x) + dy * (line.p0.y - center.y)),
-        C = (line.p0.x - center.x) * (line.p0.x - center.x) + (line.p0.y - center.y) * (line.p0.y - center.y) - radius * radius,
-        det = B * B - 4 * A * C;
-
-      if ((A <= 0.0000001) || (det < 0)) { // No real solutions.
-        return {{NAN, NAN}, {NAN, NAN}};
-      }
-
-      float
-        t0 = (float)((-B + sqrtf(det)) / (2 * A)),
-        t1 = (float)((-B - sqrtf(det)) / (2 * A));
-
-      return {{line.p0.x + t0 * dx, line.p0.y + t0 * dy}, {line.p0.x + t1 * dx, line.p0.y + t1 * dy}};
-    }
 
   public:
     Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
@@ -122,42 +102,43 @@ class Barrier {
     std::pair<float, jgui::jpoint_t<int>> Intersection(jgui::jline_t<float> line)
     {
       if (_is_line) {
-        std::pair<float, float> 
+        std::optional<std::pair<float, float>>
           tu = _line.Intersection(line);
 
-        if (tu.first < 0.0f or tu.first > 1.0f or tu.second < 0.0f) {
+        if (tu == std::nullopt or tu->first < 0.0f or tu->first > 1.0f or tu->second < 0.0f) {
           return {-1.0f, {0, 0}};
         }
 
-        return {tu.first, _line.Point(tu.first)};
+        return {tu->first, _line.Point(tu->first)};
       }
 
-      std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>> 
-        points = FindLineCircleIntersections(line, _center, _radius);
+      std::optional<std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>>>
+        points = jgui::jcircle_t<float>{_center, _radius}.Intersection(line);
 
-      if (points.first.x != NAN) {
+      if (points != std::nullopt) {
         float
-          angle = (points.second - _center).Angle();
+          angle = (points->second - _center).Angle();
 
-        if (line.p0.Distance(points.first) < line.p0.Distance(points.second)) { // INFO:: hack to avoid a concave version of circle behind of player
-          return {-1.0f, {0, 0}};
+        // INFO:: hack to avoid a concave version of circle behind of player
+        if ((line.p0 - points->first).Norm() > (line.p0 - points->second).Norm()) {
+          return {angle/(2*M_PI), points->second};
         }
-
-        return {angle/(2*M_PI), points.second};
       }
+          
+      return {-1.0f, {0, 0}};
     }
 
     float Distance(jgui::jpoint_t<float> point)
     {
       if (_is_line) {
-        float
+        std::optional<float>
           t = _line.PerpendicularIntersection(point);
 
-        if (t < 0.0f or t > 1.0f) {
+        if (t == std::nullopt or t < 0.0f or t > 1.0f) {
           return NAN;
         }
 
-        return _line.Point(t).Distance(point);
+        return _line.Point(*t).Distance(point);
       }
 
       return _center.Distance(point) - _radius;
@@ -218,11 +199,15 @@ class Sprite {
       _frames;
     jgui::jpoint_t<int>
       _pos;
+    jgui::jpoint_t<float>
+      _dir;
 		float
 			_opacity;
+    bool
+      _alive;
 
   public:
-    Sprite(jgui::Image *image, int frames, jgui::jpoint_t<int> pos)
+    Sprite(jgui::Image *image, int frames, jgui::jpoint_t<int> pos, jgui::jpoint_t<float> dir)
     {
       jgui::jsize_t<int>
         size = image->GetSize();
@@ -234,7 +219,9 @@ class Sprite {
       }
 
       _pos = pos;
+      _dir = dir;
 			_opacity = 1.0f;
+      _alive = true;
     }
 
     virtual ~Sprite()
@@ -244,6 +231,16 @@ class Sprite {
 
         // delete image;
       }
+    }
+
+    void Invalidate()
+    {
+      _alive = false;
+    }
+
+    bool Valid()
+    {
+      return _alive;
     }
 
     jgui::jpoint_t<int> GetPosition()
@@ -268,22 +265,10 @@ class Sprite {
 
     void Update()
     {
-      _pos = _pos + jgui::jpoint_t<long int>{random()%3 - 1, random()%3 - 1};
+      _pos += _dir;
 
-      if (_pos.x < 0) {
-        _pos.x = 0;
-      }
-
-      if (_pos.y < 0) {
-        _pos.y = 0;
-      }
-
-      if (_pos.x > SCREEN_WIDTH) {
-        _pos.x = SCREEN_WIDTH;
-      }
-      
-      if (_pos.y > SCREEN_HEIGHT) {
-        _pos.y = SCREEN_HEIGHT;
+      if (_pos.x < 0 or _pos.y < 0 or _pos.x > SCREEN_WIDTH or _pos.y > SCREEN_HEIGHT) {
+        Invalidate();
       }
     }
 
@@ -456,7 +441,7 @@ class Scene : public jgui::Window {
       _player;
     float
       _zbuffer[SCREEN_WIDTH];
-    int
+    bool
       _show_flat = false,
       _show_map = false;
 
@@ -474,6 +459,8 @@ class Scene : public jgui::Window {
       _images["wall1"] = new jgui::BufferedImage("images/skulls.png");
       _images["barrel"] = new jgui::BufferedImage("images/barrel.png");
       _images["ghost"] = new jgui::BufferedImage("images/ghost.png");
+      _images["ghost2"] = new jgui::BufferedImage("images/ghost2.png");
+      _images["fireball"] = new jgui::BufferedImage("images/fireball.png");
       _images["player"] = new jgui::BufferedImage("images/player.png");
 
       _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, 0}, jgui::jpoint_t<int>{SCREEN_WIDTH, 0});
@@ -490,15 +477,19 @@ class Scene : public jgui::Window {
             jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
       }
       
-      for (int i=0; i<1; i++) {
+      for (int i=0; i<10; i++) {
         jgui::jpoint_t<int>
           pos = {
             (int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)
           };
 
-        _sprites.emplace_back(_images["ghost"], 4, pos);
-
-				_sprites.rbegin()->SetOpacity(0.5f);
+        if (random()%2) {
+          _sprites.emplace_back(_images["ghost"], 4, pos, jgui::jpoint_t<float>{0, 0});
+				
+          _sprites.rbegin()->SetOpacity(0.5f);
+        } else {
+          _sprites.emplace_back(_images["ghost2"], 6, pos, jgui::jpoint_t<float>{0, 0});
+        }
       }
 
       _player.SetPosition(jgui::jpoint_t<int>{200, 250});
@@ -573,13 +564,36 @@ class Scene : public jgui::Window {
 
     void KeyHandle()
     {
+      static int 
+        fire_wait = 0;
+
+      fire_wait = fire_wait - 1;
+
       jgui::EventManager *ev = GetEventManager();
+
+      if (ev->IsKeyDown(jevent::JKS_SPACE)) { // INFO:: fire
+        if (fire_wait < 0) {
+          // TODO:: create an animated sprite with direction
+          jgui::jpoint_t<float>
+            dir {cos(_player.GetDirection()), sin(_player.GetDirection())};
+          jgui::jpoint_t<int>
+            pos = _player.GetPosition() + dir*50;
+
+          _sprites.emplace_back(_images["fireball"], 24, pos, dir*25);
+
+          fire_wait = 10;
+        }
+      }
 
       if (ev->IsKeyDown(jevent::JKS_CURSOR_LEFT)) {
         _player.LookAt(-PLAYER_ROTATE);
-      } else if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
+      }
+      
+      if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
         _player.LookAt(PLAYER_ROTATE);
-      } else if (
+      }
+      
+      if (
           ev->IsKeyDown(jevent::JKS_CURSOR_UP) or
           ev->IsKeyDown(jevent::JKS_CURSOR_DOWN) or
           ev->IsKeyDown(jevent::JKS_w) or
@@ -652,45 +666,23 @@ class Scene : public jgui::Window {
 
         object_angle = object_angle - _player.GetFieldOfView()/2.0f;
 
-        /*
-        jgui::jpoint_t<int>
-          dpos = sprite.GetPosition() - ppos;
-        float 
-          object_angle = fmod(_player.GetDirection() - dpos.Angle(), 2*M_PI);
-
-        if (object_angle < -M_PI) {
-          object_angle = 2*M_PI + object_angle;
-        }
-
-        if (object_angle > M_PI) {
-          object_angle = 2*M_PI - object_angle;
-        }
-
-        object_angle = -object_angle;
-        */
-
         bool
-          inner_player_view = fabs(object_angle) < (_player.GetFieldOfView()/2.0f); // OPTIMIZE:: process only sprites in field of view
+          inside_player_view = fabs(object_angle) < ((_player.GetFieldOfView() + M_PI/6.0f)/2.0f); // OPTIMIZE:: process only sprites in field of view (increase field of view to capture unbounded sprites)
 
-        if (inner_player_view) {
+        if (inside_player_view) {
           jgui::Image
             *image = sprite.GetTexture();
           jgui::jsize_t<int>
             size = image->GetSize();
 
           float
-            object_distance = sqrtf(dpos.x*dpos.x + dpos.y*dpos.y),
+            object_distance = dpos.EuclidianNorm(),
             object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
             object_floor = SCREEN_HEIGHT - object_ceiling,
             object_height = (object_floor - object_ceiling)*size.height,
             object_ratio = size.height/(float)size.width,
             object_width = object_height/object_ratio,
             object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
-          int
-            random_light = random()%10,
-            opacity = 0xff*sprite.GetOpacity();
-          float
-            shadow = (0.5f + random_light/30.0f) - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
 
           for (int j=0; j<object_height; j++) {
 						int y = object_ceiling + j;
@@ -722,42 +714,21 @@ class Scene : public jgui::Window {
 								uint32_t
 									pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
 
-								if (pixel & 0xff000000) {
-									int
-										cr = (pixel >> 0x10) & 0xff,
-										cg = (pixel >> 0x08) & 0xff,
-										cb = (pixel >> 0x00) & 0xff;
+                if (pixel & 0xff000000) {
+                  float
+                    light = 1.0f - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
+                  uint8_t
+                    pr = (pixel >> 0x10) & 0xff,
+                    pg = (pixel >> 0x08) & 0xff,
+                    pb = (pixel >> 0x00) & 0xff;
 
-									cr = cr*shadow;
-									cg = cg*shadow;
-									cb = cb*shadow;
+                  pr = pr*light;
+                  pg = pg*light;
+                  pb = pb*light;
 
-									if (cr < 0x00) {
-										cr = 0x00;
-									}
-
-									if (cg < 0x00) {
-										cg = 0x00;
-									}
-
-									if (cb < 0x00) {
-										cb = 0x00;
-									}
-
-									uint32_t
-										spixel = raster.GetPixel({x, y});
-									int
-										dr = (spixel >> 0x10) & 0xff,
-										dg = (spixel >> 0x08) & 0xff,
-										db = (spixel >> 0x00) & 0xff;
-
-									cr = (cr*opacity + dr*(0xff - opacity))/0xff;
-									cg = (cg*opacity + dg*(0xff - opacity))/0xff;
-									cb = (cb*opacity + db*(0xff - opacity))/0xff;
-	
-									raster.SetColor(0xff000000 | cr << 0x10 | cg << 0x08 | cb << 0x00);
-									raster.SetPixel({x, y});
-								}
+                  raster.SetColor(0xff000000 | pr << 0x10 | pg << 0x08 | pb);
+                  raster.SetPixel({x, y});
+                }
 							}
             }
           }
@@ -765,6 +736,12 @@ class Scene : public jgui::Window {
 
         sprite.Update();
       }
+    
+      // INFO:: remove invalid sprites, like dead persons, fireballs, ...
+      _sprites.erase(std::remove_if(_sprites.begin(), _sprites.end(), 
+            [](Sprite &param) {
+              return param.Valid() == false;
+            }), _sprites.end());
     }
 
     void PaintFire(jgui::Raster &raster)
@@ -887,20 +864,9 @@ class Scene : public jgui::Window {
           cosf = cos(-_player.GetFieldOfView()/2.0f + (i*_player.GetFieldOfView())/(float)SCREEN_WIDTH);
         int
           wall = (SCREEN_HEIGHT*SCALING_MAP)/(d0*cosf);
-        float
-          distance = (50.0f + 10.0f/(random_light + 1.0f))/d0;
-
-        if (distance < 0.0f) {
-          distance = 0.0f;
-        } else if (distance > 1.0f) {
-          distance = 1.0f;
-        }
 
         if (_show_flat == true) {
-          int
-            color = 0xff*distance;
-
-          raster.SetColor(0xff000000 | color << 16 | color << 8 | color);
+          raster.SetColor(0xfff0f0f0);
           raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
         } else {
           jgui::Image 
@@ -921,18 +887,8 @@ class Scene : public jgui::Window {
             if (j > 0 and j < SCREEN_HEIGHT) {
               int 
 								size = j - SCREEN_HEIGHT/2 + wall;
-              uint32_t
-                pixel = texture->GetGraphics()->GetRGB({index, (tsize.height*size)/(2*wall)});
-              uint8_t
-                pr = (pixel >> 0x10) & 0xff,
-                pg = (pixel >> 0x08) & 0xff,
-                pb = (pixel >> 0x00) & 0xff;
 
-              pr = pr*distance;
-              pg = pg*distance;
-              pb = pb*distance;
-
-              raster.SetColor(0xff000000 | pr << 0x10 | pg << 0x08 | pb << 0x00);
+              raster.SetColor(texture->GetGraphics()->GetRGB({index, (tsize.height*size)/(2*wall)}));
               raster.SetPixel({i, j});
             }
           }
