@@ -99,17 +99,17 @@ class Barrier {
     {
     }
 
-    std::pair<float, jgui::jpoint_t<int>> Intersection(jgui::jline_t<float> line)
+    std::optional<std::pair<float, jgui::jpoint_t<int>>> Intersection(jgui::jline_t<float> line)
     {
       if (_is_line) {
         std::optional<std::pair<float, float>>
           tu = _line.Intersection(line);
 
         if (tu == std::nullopt or tu->first < 0.0f or tu->first > 1.0f or tu->second < 0.0f) {
-          return {-1.0f, {0, 0}};
+          return std::nullopt;
         }
 
-        return {tu->first, _line.Point(tu->first)};
+        return std::make_pair(tu->first, _line.Point(tu->first));
       }
 
       std::optional<std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>>>
@@ -121,21 +121,21 @@ class Barrier {
 
         // INFO:: hack to avoid a concave version of circle behind of player
         if ((line.p0 - points->first).Norm() > (line.p0 - points->second).Norm()) {
-          return {angle/(2*M_PI), points->second};
+          return std::make_pair(angle/(2*M_PI), points->second);
         }
       }
           
-      return {-1.0f, {0, 0}};
+      return std::nullopt;
     }
 
-    float Distance(jgui::jpoint_t<float> point)
+    std::optional<float> Distance(jgui::jpoint_t<float> point)
     {
       if (_is_line) {
         std::optional<float>
           t = _line.PerpendicularIntersection(point);
 
         if (t == std::nullopt or t < 0.0f or t > 1.0f) {
-          return NAN;
+          return std::nullopt;
         }
 
         return _line.Point(*t).Distance(point);
@@ -287,7 +287,9 @@ class Player {
 
   private:
     std::vector<jgui::Image *>
-      _frames;
+      _idle;
+    std::vector<jgui::Image *>
+      _fire;
 		jgui::jpoint_t<int>
 			_pos;
     float
@@ -305,7 +307,8 @@ class Player {
       _fov = fov;
 
       jgui::BufferedImage 
-        image("images/candle.png");
+        image("images/candle.png"),
+        image_fire("images/candle-fire.png");
       jgui::jsize_t<int>
         isize = image.GetSize();
       int
@@ -314,19 +317,24 @@ class Player {
 
       for (int i=0; i<frames; i++) {
         jgui::Image *crop = image.Crop({i*step, 0, step, step});
+        jgui::Image *crop_fire = image_fire.Crop({i*step, 0, step, step});
 
-        _frames.push_back(crop->Scale({step*frames, step*frames}));
+        _idle.push_back(crop->Scale({step*frames, step*frames}));
+        _fire.push_back(crop_fire->Scale({step*frames, step*frames}));
 
         delete crop;
+        delete crop_fire;
       }
     }
 
     virtual ~Player()
     {
-      for (int i=0; i<(int)_frames.size(); i++) {
-        jgui::Image *image = _frames[i];
+      for (int i=0; i<(int)_idle.size(); i++) {
+        jgui::Image *image = _idle[i];
+        jgui::Image *image_fire = _fire[i];
 
         delete image;
+        delete image_fire;
       }
     }
 
@@ -415,7 +423,7 @@ class Player {
 
       int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT)/2;
 
-      raster.DrawImage(_frames[(engine_clock/2)%_frames.size()], {(SCREEN_WIDTH - size)/2 + pos, (int)(SCREEN_HEIGHT - 0.9f*size + 0.1f*size*sin(arc))});
+      raster.DrawImage(_idle[(engine_clock/2)%_idle.size()], {(SCREEN_WIDTH - size)/2 + pos, (int)(SCREEN_HEIGHT - 0.9f*size + 0.1f*size*sin(arc))});
     }
 
 };
@@ -459,7 +467,6 @@ class Scene : public jgui::Window {
       _images["wall1"] = new jgui::BufferedImage("images/skulls.png");
       _images["barrel"] = new jgui::BufferedImage("images/barrel.png");
       _images["ghost"] = new jgui::BufferedImage("images/ghost.png");
-      _images["ghost2"] = new jgui::BufferedImage("images/ghost2.png");
       _images["fireball"] = new jgui::BufferedImage("images/fireball.png");
       _images["player"] = new jgui::BufferedImage("images/player.png");
 
@@ -483,13 +490,8 @@ class Scene : public jgui::Window {
             (int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)
           };
 
-        if (random()%2) {
-          _sprites.emplace_back(_images["ghost"], 4, pos, jgui::jpoint_t<float>{0, 0});
-				
-          _sprites.rbegin()->SetOpacity(0.5f);
-        } else {
-          _sprites.emplace_back(_images["ghost2"], 6, pos, jgui::jpoint_t<float>{0, 0});
-        }
+        _sprites.emplace_back(_images["ghost"], 4, pos, jgui::jpoint_t<float>{0, 0});
+        _sprites.rbegin()->SetOpacity(0.5f);
       }
 
       _player.SetPosition(jgui::jpoint_t<int>{200, 250});
@@ -613,7 +615,10 @@ class Scene : public jgui::Window {
         }
 
         for (auto barrier : _barriers) {
-          if (barrier.Distance(_player.GetPosition()) < 8.0f) { // INFO:: minumum perpendicular distance to wall
+          std::optional<float>
+            distance = barrier.Distance(_player.GetPosition());
+
+          if (distance != std::nullopt and distance < 8.0f) { // INFO:: minumum perpendicular distance to wall
             _player.SetPosition(pos);
 
             return;
@@ -837,15 +842,15 @@ class Scene : public jgui::Window {
         for (auto &barrier : _barriers) {
           jgui::jline_t<float>
             ray = {pos, jgui::jpoint_t<float>(pos) + jgui::jpoint_t<float>{cos(angle), sin(angle)}};
-          std::pair<float, jgui::jpoint_t<int>> 
+          std::optional<std::pair<float, jgui::jpoint_t<int>>>
             intersection = barrier.Intersection(ray);
 
-          if (intersection.first >= 0.0f) {
+          if (intersection != std::nullopt) {
             float
-              d1 = (pos - intersection.second).Norm();
+              d1 = (pos - intersection->second).Norm();
 
             if (d1 < d0) {
-              best = intersection;
+              best = *intersection;
               d0 = d1;
               pbarrier = &barrier;
             }
