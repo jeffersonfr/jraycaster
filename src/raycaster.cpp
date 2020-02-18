@@ -455,7 +455,7 @@ class Scene : public jgui::Window {
 
   public:
     Scene():
-      jgui::Window(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT),
+      jgui::Window({SCREEN_WIDTH, SCREEN_HEIGHT}),
       _player(PLAYER_FOV)
     {
 			_scene = new jgui::BufferedImage(jgui::JPF_RGB32, {SCREEN_WIDTH, SCREEN_HEIGHT});
