@@ -1,7 +1,14 @@
 cmake_minimum_required (VERSION 3.0)
 
+pkg_check_modules(JCANVAS jcanvas)
+
+if (NOT JCANVAS_FOUND)
+  message (SEND_ERROR "unable to find jcanvas library")
+endif()
+
 include_directories(
-  ${JLIBCPP_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/include
+  ${JCANVAS_INCLUDE_DIRS}
 )
 
 add_executable(raycaster
@@ -9,12 +16,11 @@ add_executable(raycaster
   )
 
 target_link_libraries(raycaster
-  ${JLIBCPP_LIBRARIES}
-  )
-
-add_definitions(${JLIBCPP_CFLAGS})
+  ${JCANVAS_LIBRARIES}
+)
 
 file(
   COPY ${CMAKE_CURRENT_SOURCE_DIR}/images 
   DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
   )
+

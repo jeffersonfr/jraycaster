@@ -17,13 +17,11 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-#include "jgui/japplication.h"
-#include "jgui/jwindow.h"
-#include "jgui/jraster.h"
-#include "jgui/jindexedimage.h"
-#include "jgui/jbufferedimage.h"
-#include "jmedia/jplayermanager.h"
-#include "jmedia/jaudiomixercontrol.h"
+#include "jcanvas/core/japplication.h"
+#include "jcanvas/core/jwindow.h"
+#include "jcanvas/core/jraster.h"
+#include "jcanvas/core/jindexedimage.h"
+#include "jcanvas/core/jbufferedimage.h"
 
 #include <algorithm>
 #include <numeric>
@@ -63,11 +61,11 @@ static uint8_t
 class Barrier {
 
   private:
-    jgui::Image 
+    jcanvas::Image 
       *_image;
-    jgui::jline_t<int> 
+    jcanvas::jline_t<int> 
       _line;
-    jgui::jpoint_t<int>
+    jcanvas::jpoint_t<int>
       _center;
     float
       _radius;
@@ -77,7 +75,7 @@ class Barrier {
       _is_line;
 
   public:
-    Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, jgui::jpoint_t<int> p1)
+    Barrier(jcanvas::Image *image, jcanvas::jpoint_t<int> p0, jcanvas::jpoint_t<int> p1)
     {
       _image = image;
       _line = {p0, p1};
@@ -85,7 +83,7 @@ class Barrier {
       _is_line = true;
     }
 
-    Barrier(jgui::Image *image, jgui::jpoint_t<int> p0, float radius)
+    Barrier(jcanvas::Image *image, jcanvas::jpoint_t<int> p0, float radius)
     {
       _image = image;
       // _line = {p0, p1};
@@ -99,7 +97,7 @@ class Barrier {
     {
     }
 
-    std::optional<std::pair<float, jgui::jpoint_t<int>>> Intersection(jgui::jline_t<float> line)
+    std::optional<std::pair<float, jcanvas::jpoint_t<int>>> Intersection(jcanvas::jline_t<float> line)
     {
       if (_is_line) {
         std::optional<std::pair<float, float>>
@@ -112,8 +110,8 @@ class Barrier {
         return std::make_pair(tu->first, _line.Point(tu->first));
       }
 
-      std::optional<std::pair<jgui::jpoint_t<float>, jgui::jpoint_t<float>>>
-        points = jgui::jcircle_t<float>{_center, _radius}.Intersection(line);
+      std::optional<std::pair<jcanvas::jpoint_t<float>, jcanvas::jpoint_t<float>>>
+        points = jcanvas::jcircle_t<float>{_center, _radius}.Intersection(line);
 
       if (points != std::nullopt) {
         float
@@ -128,7 +126,7 @@ class Barrier {
       return std::nullopt;
     }
 
-    std::optional<float> Distance(jgui::jpoint_t<float> point)
+    std::optional<float> Distance(jcanvas::jpoint_t<float> point)
     {
       if (_is_line) {
         std::optional<float>
@@ -153,7 +151,7 @@ class Barrier {
       return 2*M_PI*_radius;
     }
 
-    void Paint(jgui::Raster &raster)
+    void Paint(jcanvas::Raster &raster)
     {
       raster.SetColor(0xffff0000);
 
@@ -166,12 +164,12 @@ class Barrier {
       raster.DrawCircle(_center, _radius);
     }
 
-    void SetTexture(jgui::Image *image)
+    void SetTexture(jcanvas::Image *image)
     {
       _image = image;
     }
 
-    jgui::Image * GetTexture()
+    jcanvas::Image * GetTexture()
     {
       return _image;
     }
@@ -195,11 +193,11 @@ class Barrier {
 class Sprite {
 
   private:
-    std::vector<jgui::Image *>
+    std::vector<jcanvas::Image *>
       _frames;
-    jgui::jpoint_t<int>
+    jcanvas::jpoint_t<int>
       _pos;
-    jgui::jpoint_t<float>
+    jcanvas::jpoint_t<float>
       _dir;
 		float
 			_opacity;
@@ -207,15 +205,15 @@ class Sprite {
       _alive;
 
   public:
-    Sprite(jgui::Image *image, int frames, jgui::jpoint_t<int> pos, jgui::jpoint_t<float> dir)
+    Sprite(jcanvas::Image *image, int frames, jcanvas::jpoint_t<int> pos, jcanvas::jpoint_t<float> dir)
     {
-      jgui::jsize_t<int>
+      jcanvas::jpoint_t<int>
         size = image->GetSize();
       int 
-        step = size.width/frames;
+        step = size.x/frames;
 
       for (int i=0; i<frames; i++) {
-        _frames.push_back(image->Crop({i*step, 0, step, size.height}));
+        _frames.push_back(image->Crop({i*step, 0, step, size.y}));
       }
 
       _pos = pos;
@@ -227,7 +225,7 @@ class Sprite {
     virtual ~Sprite()
     {
       for (int i=0; i<(int)_frames.size(); i++) {
-        // jgui::Image *image = _frames[i];
+        // jcanvas::Image *image = _frames[i];
 
         // delete image;
       }
@@ -243,12 +241,12 @@ class Sprite {
       return _alive;
     }
 
-    jgui::jpoint_t<int> GetPosition()
+    jcanvas::jpoint_t<int> GetPosition()
     {
       return _pos;
     }
 
-    jgui::Image * GetTexture()
+    jcanvas::Image * GetTexture()
     {
       return _frames[(engine_clock/2)%_frames.size()];
     }
@@ -272,9 +270,9 @@ class Sprite {
       }
     }
 
-    void Paint(jgui::Raster &raster)
+    void Paint(jcanvas::Raster &raster)
     {
-      jgui::Image *scale = GetTexture()->Scale({16, 16});
+      jcanvas::Image *scale = GetTexture()->Scale({16, 16});
 
       raster.DrawImage(scale, {_pos.x - 8, _pos.y - 8});
 
@@ -286,11 +284,11 @@ class Sprite {
 class Player {
 
   private:
-    std::vector<jgui::Image *>
+    std::vector<jcanvas::Image *>
       _idle;
-    std::vector<jgui::Image *>
+    std::vector<jcanvas::Image *>
       _fire;
-		jgui::jpoint_t<int>
+		jcanvas::jpoint_t<int>
 			_pos;
     float
 			_dir,
@@ -306,18 +304,18 @@ class Player {
 			_dir = 0.0f;
       _fov = fov;
 
-      jgui::BufferedImage 
+      jcanvas::BufferedImage 
         image("images/candle.png"),
         image_fire("images/candle-fire.png");
-      jgui::jsize_t<int>
+      jcanvas::jpoint_t<int>
         isize = image.GetSize();
       int
         frames = 4,
-        step = isize.width/frames;
+        step = isize.x/frames;
 
       for (int i=0; i<frames; i++) {
-        jgui::Image *crop = image.Crop({i*step, 0, step, step});
-        jgui::Image *crop_fire = image_fire.Crop({i*step, 0, step, step});
+        jcanvas::Image *crop = image.Crop({i*step, 0, step, step});
+        jcanvas::Image *crop_fire = image_fire.Crop({i*step, 0, step, step});
 
         _idle.push_back(crop->Scale({step*frames, step*frames}));
         _fire.push_back(crop_fire->Scale({step*frames, step*frames}));
@@ -330,8 +328,8 @@ class Player {
     virtual ~Player()
     {
       for (int i=0; i<(int)_idle.size(); i++) {
-        jgui::Image *image = _idle[i];
-        jgui::Image *image_fire = _fire[i];
+        jcanvas::Image *image = _idle[i];
+        jcanvas::Image *image_fire = _fire[i];
 
         delete image;
         delete image_fire;
@@ -353,12 +351,12 @@ class Player {
 			return _dir;
     }
 
-    jgui::jpoint_t<int> GetPosition()
+    jcanvas::jpoint_t<int> GetPosition()
     {
 			return _pos;
     }
 
-    void SetPosition(jgui::jpoint_t<int> point)
+    void SetPosition(jcanvas::jpoint_t<int> point)
     {
 			_pos = point;
     }
@@ -376,7 +374,7 @@ class Player {
 
 		void Step(int signal, float angle)
 		{
-      SetPosition(_pos + jgui::jpoint_t<float>{signal*PLAYER_STEP*cos(_dir + angle), signal*PLAYER_STEP*sin(_dir + angle)});
+      SetPosition(_pos + jcanvas::jpoint_t<float>{signal*PLAYER_STEP*cos(_dir + angle), signal*PLAYER_STEP*sin(_dir + angle)});
 		}
 
     void Left()
@@ -399,7 +397,7 @@ class Player {
 			Step(-1, 0.0f);
     }
 
-    void Paint(jgui::Raster &raster)
+    void Paint(jcanvas::Raster &raster)
     {
       static float
         arc = 0.0f;
@@ -428,18 +426,20 @@ class Player {
 
 };
 
-class Scene : public jgui::Window {
+class Scene : public jcanvas::Window, public jcanvas::KeyListener {
 
   private:
-    std::map<std::string, jgui::Image *>
+    std::map<std::string, jcanvas::Image *>
       _images;
+    /*
     jmedia::Player 
       *_media;
     jmedia::AudioMixerControl 
       *_control;
     jmedia::Audio 
       *_music;
-		jgui::Image
+    */
+		jcanvas::Image
 			*_scene;
     std::vector<Barrier> 
       _barriers;
@@ -455,46 +455,46 @@ class Scene : public jgui::Window {
 
   public:
     Scene():
-      jgui::Window({SCREEN_WIDTH, SCREEN_HEIGHT}),
+      jcanvas::Window({SCREEN_WIDTH, SCREEN_HEIGHT}),
       _player(PLAYER_FOV)
     {
-			_scene = new jgui::BufferedImage(jgui::JPF_RGB32, {SCREEN_WIDTH, SCREEN_HEIGHT});
+			_scene = new jcanvas::BufferedImage(jcanvas::jpixelformat_t::RGB32, {SCREEN_WIDTH, SCREEN_HEIGHT});
 
-			_scene->GetGraphics()->SetAntialias(jgui::JAM_NONE);
+			_scene->GetGraphics()->SetAntialias(jcanvas::jantialias_mode_t::None);
 
-      _images["splash"] = new jgui::BufferedImage("images/splash.png");
-      _images["wall0"] = new jgui::BufferedImage("images/greystone.png");
-      _images["wall1"] = new jgui::BufferedImage("images/skulls.png");
-      _images["barrel"] = new jgui::BufferedImage("images/barrel.png");
-      _images["ghost"] = new jgui::BufferedImage("images/ghost.png");
-      _images["fireball"] = new jgui::BufferedImage("images/fireball.png");
-      _images["player"] = new jgui::BufferedImage("images/player.png");
+      _images["splash"] = new jcanvas::BufferedImage("images/splash.png");
+      _images["wall0"] = new jcanvas::BufferedImage("images/greystone.png");
+      _images["wall1"] = new jcanvas::BufferedImage("images/skulls.png");
+      _images["barrel"] = new jcanvas::BufferedImage("images/barrel.png");
+      _images["ghost"] = new jcanvas::BufferedImage("images/ghost.png");
+      _images["fireball"] = new jcanvas::BufferedImage("images/fireball.png");
+      _images["player"] = new jcanvas::BufferedImage("images/player.png");
 
-      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, 0}, jgui::jpoint_t<int>{SCREEN_WIDTH, 0});
-      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{SCREEN_WIDTH, 0}, jgui::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
-      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, SCREEN_HEIGHT});
-      _barriers.emplace_back(_images["wall0"], jgui::jpoint_t<int>{0, SCREEN_HEIGHT}, jgui::jpoint_t<int>{0, 0});
+      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{0, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0});
+      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
+      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT});
+      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, 0});
 
       // circle barrier
       _barriers.emplace_back(_images["wall1"], 
-          jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, 30);
+          jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, 30);
 
       for (int i=0; i<3; i++) {
         _barriers.emplace_back(_images["wall1"], 
-            jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jgui::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
+            jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
       }
       
       for (int i=0; i<10; i++) {
-        jgui::jpoint_t<int>
+        jcanvas::jpoint_t<int>
           pos = {
             (int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)
           };
 
-        _sprites.emplace_back(_images["ghost"], 4, pos, jgui::jpoint_t<float>{0, 0});
+        _sprites.emplace_back(_images["ghost"], 4, pos, jcanvas::jpoint_t<float>{0, 0});
         _sprites.rbegin()->SetOpacity(0.5f);
       }
 
-      _player.SetPosition(jgui::jpoint_t<int>{200, 250});
+      _player.SetPosition(jcanvas::jpoint_t<int>{200, 250});
       
       // INFO:: fire
       srand(time(NULL));
@@ -505,6 +505,7 @@ class Scene : public jgui::Window {
 				}
       }
 
+      /*
       // INFO:: init sound system
       _control = nullptr;
       _music = nullptr;
@@ -529,6 +530,7 @@ class Scene : public jgui::Window {
       
       _music->SetLoopEnabled(true);
       _control->StartSound(_music);
+      */
     }
 
     virtual ~Scene()
@@ -536,12 +538,13 @@ class Scene : public jgui::Window {
       _barriers.clear();
 
       for (auto pair : _images) {
-        jgui::Image *image = pair.second;
+        jcanvas::Image *image = pair.second;
 
         delete image;
         image = nullptr;
       }
 
+      /*
       if (_media != nullptr) {
         _media->Stop();
         _media->Close();
@@ -551,13 +554,14 @@ class Scene : public jgui::Window {
         delete _music;
         _music = nullptr;
       }
+      */
     }
 
-		virtual bool KeyPressed(jevent::KeyEvent *event)
+		virtual bool KeyPressed(jcanvas::KeyEvent *event)
 		{
-      if (event->GetSymbol() == jevent::JKS_F1) {
+      if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F1) {
         _show_map = !_show_map;
-      } else if (event->GetSymbol() == jevent::JKS_F2) {
+      } else if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F2) {
         _show_flat = !_show_flat;
       }
 
@@ -571,14 +575,14 @@ class Scene : public jgui::Window {
 
       fire_wait = fire_wait - 1;
 
-      jgui::EventManager *ev = GetEventManager();
+      jcanvas::EventManager &ev = GetEventManager();
 
-      if (ev->IsKeyDown(jevent::JKS_SPACE)) { // INFO:: fire
+      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::Space)) { // INFO:: fire
         if (fire_wait < 0) {
           // TODO:: create an animated sprite with direction
-          jgui::jpoint_t<float>
+          jcanvas::jpoint_t<float>
             dir {cos(_player.GetDirection()), sin(_player.GetDirection())};
-          jgui::jpoint_t<int>
+          jcanvas::jpoint_t<int>
             pos = _player.GetPosition() + dir*50;
 
           _sprites.emplace_back(_images["fireball"], 24, pos, dir*25);
@@ -587,30 +591,30 @@ class Scene : public jgui::Window {
         }
       }
 
-      if (ev->IsKeyDown(jevent::JKS_CURSOR_LEFT)) {
+      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorLeft)) {
         _player.LookAt(-PLAYER_ROTATE);
       }
       
-      if (ev->IsKeyDown(jevent::JKS_CURSOR_RIGHT)) {
+      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorRight)) {
         _player.LookAt(PLAYER_ROTATE);
       }
       
       if (
-          ev->IsKeyDown(jevent::JKS_CURSOR_UP) or
-          ev->IsKeyDown(jevent::JKS_CURSOR_DOWN) or
-          ev->IsKeyDown(jevent::JKS_w) or
-          ev->IsKeyDown(jevent::JKS_s) or
-          ev->IsKeyDown(jevent::JKS_a) or
-          ev->IsKeyDown(jevent::JKS_d)) {
-        jgui::jpoint_t<int> pos = _player.GetPosition();
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp) or
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown) or
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a) or
+          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
+        jcanvas::jpoint_t<int> pos = _player.GetPosition();
 
-        if (ev->IsKeyDown(jevent::JKS_w) or ev->IsKeyDown(jevent::JKS_CURSOR_UP)) {
+        if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp)) {
           _player.Forward();
-        } else if (ev->IsKeyDown(jevent::JKS_s) or ev->IsKeyDown(jevent::JKS_CURSOR_DOWN)) {
+        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown)) {
           _player.Backward();
-        } else if (ev->IsKeyDown(jevent::JKS_a)) {
+        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a)) {
           _player.Left();
-        } else if (ev->IsKeyDown(jevent::JKS_d)) {
+        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
           _player.Right();
         }
 
@@ -643,10 +647,10 @@ class Scene : public jgui::Window {
       std::this_thread::sleep_for(diff);
     }
 
-    void PaintSprites(jgui::Raster &raster)
+    void PaintSprites(jcanvas::Raster &raster)
     {
       // INFO:: draw sprites
-      jgui::jpoint_t<int>
+      jcanvas::jpoint_t<int>
         ppos = _player.GetPosition();
 
       std::sort(_sprites.begin(), _sprites.end(), [&](Sprite &s1, Sprite &s2) {
@@ -654,7 +658,7 @@ class Scene : public jgui::Window {
       });
 
       for (auto &sprite : _sprites) {
-        jgui::jpoint_t<int>
+        jcanvas::jpoint_t<int>
           dpos = sprite.GetPosition() - ppos;
         float
           object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
@@ -675,17 +679,17 @@ class Scene : public jgui::Window {
           inside_player_view = fabs(object_angle) < ((_player.GetFieldOfView() + M_PI/6.0f)/2.0f); // OPTIMIZE:: process only sprites in field of view (increase field of view to capture unbounded sprites)
 
         if (inside_player_view) {
-          jgui::Image
+          jcanvas::Image
             *image = sprite.GetTexture();
-          jgui::jsize_t<int>
+          jcanvas::jpoint_t<int>
             size = image->GetSize();
 
           float
             object_distance = dpos.EuclidianNorm(),
             object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
             object_floor = SCREEN_HEIGHT - object_ceiling,
-            object_height = (object_floor - object_ceiling)*size.height,
-            object_ratio = size.height/(float)size.width,
+            object_height = (object_floor - object_ceiling)*size.y,
+            object_ratio = size.y/(float)size.x,
             object_width = object_height/object_ratio,
             object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
 
@@ -717,7 +721,7 @@ class Scene : public jgui::Window {
 
 							if (object_distance <= _zbuffer[x]) {
 								uint32_t
-									pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.width), (int)(sample_y*size.height)});
+									pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.x), (int)(sample_y*size.y)});
 
                 if (pixel & 0xff000000) {
                   float
@@ -749,7 +753,7 @@ class Scene : public jgui::Window {
             }), _sprites.end());
     }
 
-    void PaintFire(jgui::Raster &raster)
+    void PaintFire(jcanvas::Raster &raster)
     {
       for (int j=0; j<FIRE_SCREEN_HEIGHT - 1; j++) {
         for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
@@ -764,9 +768,9 @@ class Scene : public jgui::Window {
         }
       }
 
-      jgui::IndexedImage 
+      jcanvas::IndexedImage 
         image(palette, 37, (uint8_t *)buffer, {FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
-      jgui::Image
+      jcanvas::Image
         *crop = image.Crop({(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}),
         *scale = crop->Scale({SCREEN_WIDTH, SCREEN_HEIGHT/2});
 
@@ -776,18 +780,18 @@ class Scene : public jgui::Window {
       delete crop;
     }
 
-    void PaintPlayer(jgui::Raster &raster)
+    void PaintPlayer(jcanvas::Raster &raster)
     {
       _player.Paint(raster);
     }
 
-    void PaintMap(jgui::Raster &raster)
+    void PaintMap(jcanvas::Raster &raster)
     {
-      jgui::Image 
+      jcanvas::Image 
         *rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
-      jgui::jpoint_t<int>
+      jcanvas::jpoint_t<int>
         pos = _player.GetPosition();
-      jgui::jsize_t<int>
+      jcanvas::jpoint_t<int>
         size = rotate->GetSize();
       float 
         arc0 = -_player.GetDirection() + _player.GetFieldOfView()/2.0f,
@@ -797,7 +801,7 @@ class Scene : public jgui::Window {
 
       raster.SetColor(0xff000000 | color << 0x10 | color << 0x08 | color);
       raster.FillArc(pos, {100, 100}, arc1, arc0);
-      raster.DrawImage(rotate, {pos.x - size.width/2, pos.y - size.height/2});
+      raster.DrawImage(rotate, {pos.x - size.x/2, pos.y - size.y/2});
 
       delete rotate;
 
@@ -810,9 +814,9 @@ class Scene : public jgui::Window {
       }
     }
 
-    void Paint(jgui::Graphics *g) 
+    void Paint(jcanvas::Graphics *g) 
     {
-      jgui::Raster raster((uint32_t *)cairo_image_surface_get_data(_scene->GetGraphics()->GetCairoSurface()), _scene->GetSize());
+      jcanvas::Raster raster((uint32_t *)cairo_image_surface_get_data(_scene->GetGraphics()->GetCairoSurface()), _scene->GetSize());
 
       raster.Clear();
 
@@ -822,14 +826,14 @@ class Scene : public jgui::Window {
       KeyHandle();
 
       // INFO:: draw walls
-			jgui::jpoint_t<int>
+			jcanvas::jpoint_t<int>
 				pos = _player.GetPosition();
       int 
 				random_light = random()%10;
 
       // INFO:: 3d map
       for (int i=0; i<SCREEN_WIDTH; i++) {
-        std::pair<float, jgui::jpoint_t<int>> 
+        std::pair<float, jcanvas::jpoint_t<int>> 
           best = {-1.0f, {9999, 9999}};
         Barrier 
           *pbarrier = nullptr;
@@ -840,9 +844,9 @@ class Scene : public jgui::Window {
 
         // circle
         for (auto &barrier : _barriers) {
-          jgui::jline_t<float>
-            ray = {pos, jgui::jpoint_t<float>(pos) + jgui::jpoint_t<float>{cos(angle), sin(angle)}};
-          std::optional<std::pair<float, jgui::jpoint_t<int>>>
+          jcanvas::jline_t<float>
+            ray = {pos, jcanvas::jpoint_t<float>(pos) + jcanvas::jpoint_t<float>{cos(angle), sin(angle)}};
+          std::optional<std::pair<float, jcanvas::jpoint_t<int>>>
             intersection = barrier.Intersection(ray);
 
           if (intersection != std::nullopt) {
@@ -874,17 +878,17 @@ class Scene : public jgui::Window {
           raster.SetColor(0xfff0f0f0);
           raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
         } else {
-          jgui::Image 
+          jcanvas::Image 
             *texture = pbarrier->GetTexture();
-          jgui::jsize_t<int>
+          jcanvas::jpoint_t<int>
             tsize = texture->GetSize();
 					float
 						scale = pbarrier->GetTextureScale();
           int 
-            index = (int)(best.first*tsize.width);
+            index = (int)(best.first*tsize.x);
 
 					if (scale != 0.0f) {
-            index = (int)(best.first*pbarrier->GetSize()*scale)%tsize.width;
+            index = (int)(best.first*pbarrier->GetSize()*scale)%tsize.x;
 					}
 
           // INFO:: casting walls
@@ -893,7 +897,7 @@ class Scene : public jgui::Window {
               int 
 								size = j - SCREEN_HEIGHT/2 + wall;
 
-              raster.SetColor(texture->GetGraphics()->GetRGB({index, (tsize.height*size)/(2*wall)}));
+              raster.SetColor(texture->GetGraphics()->GetRGB({index, (tsize.y*size)/(2*wall)}));
               raster.SetPixel({i, j});
             }
           }
@@ -954,7 +958,7 @@ class Scene : public jgui::Window {
 
 int main(int argc, char **argv)
 {
-  jgui::Application::Init(argc, argv);
+  jcanvas::Application::Init(argc, argv);
 
   srandom(time(NULL));
 
@@ -963,7 +967,7 @@ int main(int argc, char **argv)
   app.SetTitle("Scene");
   app.Exec();
 
-  jgui::Application::Loop();
+  jcanvas::Application::Loop();
 
   return 0;
 }
