@@ -61,8 +61,8 @@ static uint8_t
 class Barrier {
 
   private:
-    jcanvas::Image 
-      *_image;
+    std::shared_ptr<jcanvas::Image>
+      _image;
     jcanvas::jline_t<int> 
       _line;
     jcanvas::jpoint_t<int>
@@ -75,7 +75,7 @@ class Barrier {
       _is_line;
 
   public:
-    Barrier(jcanvas::Image *image, jcanvas::jpoint_t<int> p0, jcanvas::jpoint_t<int> p1)
+    Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, jcanvas::jpoint_t<int> p1)
     {
       _image = image;
       _line = {p0, p1};
@@ -83,7 +83,7 @@ class Barrier {
       _is_line = true;
     }
 
-    Barrier(jcanvas::Image *image, jcanvas::jpoint_t<int> p0, float radius)
+    Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, float radius)
     {
       _image = image;
       // _line = {p0, p1};
@@ -164,12 +164,12 @@ class Barrier {
       raster.DrawCircle(_center, _radius);
     }
 
-    void SetTexture(jcanvas::Image *image)
+    void SetTexture(std::shared_ptr<jcanvas::Image> image)
     {
       _image = image;
     }
 
-    jcanvas::Image * GetTexture()
+    std::shared_ptr<jcanvas::Image> GetTexture()
     {
       return _image;
     }
@@ -193,7 +193,7 @@ class Barrier {
 class Sprite {
 
   private:
-    std::vector<jcanvas::Image *>
+    std::vector<std::shared_ptr<jcanvas::Image>>
       _frames;
     jcanvas::jpoint_t<int>
       _pos;
@@ -205,7 +205,7 @@ class Sprite {
       _alive;
 
   public:
-    Sprite(jcanvas::Image *image, int frames, jcanvas::jpoint_t<int> pos, jcanvas::jpoint_t<float> dir)
+    Sprite(std::shared_ptr<jcanvas::Image> image, int frames, jcanvas::jpoint_t<int> pos, jcanvas::jpoint_t<float> dir)
     {
       jcanvas::jpoint_t<int>
         size = image->GetSize();
@@ -224,11 +224,6 @@ class Sprite {
 
     virtual ~Sprite()
     {
-      for (int i=0; i<(int)_frames.size(); i++) {
-        // jcanvas::Image *image = _frames[i];
-
-        // delete image;
-      }
     }
 
     void Invalidate()
@@ -246,7 +241,7 @@ class Sprite {
       return _pos;
     }
 
-    jcanvas::Image * GetTexture()
+    std::shared_ptr<jcanvas::Image> GetTexture()
     {
       return _frames[(engine_clock/2)%_frames.size()];
     }
@@ -272,11 +267,7 @@ class Sprite {
 
     void Paint(jcanvas::Raster &raster)
     {
-      jcanvas::Image *scale = GetTexture()->Scale({16, 16});
-
-      raster.DrawImage(scale, {_pos.x - 8, _pos.y - 8});
-
-      delete scale;
+      raster.DrawImage(GetTexture()->Scale({16, 16}), {_pos.x - 8, _pos.y - 8});
     }
 
 };
@@ -284,9 +275,9 @@ class Sprite {
 class Player {
 
   private:
-    std::vector<jcanvas::Image *>
+    std::vector<std::shared_ptr<jcanvas::Image>>
       _idle;
-    std::vector<jcanvas::Image *>
+    std::vector<std::shared_ptr<jcanvas::Image>>
       _fire;
 		jcanvas::jpoint_t<int>
 			_pos;
@@ -304,36 +295,23 @@ class Player {
 			_dir = 0.0f;
       _fov = fov;
 
-      jcanvas::BufferedImage 
-        image("images/candle.png"),
-        image_fire("images/candle-fire.png");
+      std::shared_ptr<jcanvas::BufferedImage>
+        image = std::make_shared<jcanvas::BufferedImage>("images/candle.png"),
+        image_fire = std::make_shared<jcanvas::BufferedImage>("images/candle-fire.png");
       jcanvas::jpoint_t<int>
-        isize = image.GetSize();
+        isize = image->GetSize();
       int
         frames = 4,
         step = isize.x/frames;
 
       for (int i=0; i<frames; i++) {
-        jcanvas::Image *crop = image.Crop({i*step, 0, step, step});
-        jcanvas::Image *crop_fire = image_fire.Crop({i*step, 0, step, step});
-
-        _idle.push_back(crop->Scale({step*frames, step*frames}));
-        _fire.push_back(crop_fire->Scale({step*frames, step*frames}));
-
-        delete crop;
-        delete crop_fire;
+        _idle.push_back(image->Crop({i*step, 0, step, step})->Scale({step*frames, step*frames}));
+        _fire.push_back(image_fire->Crop({i*step, 0, step, step})->Scale({step*frames, step*frames}));
       }
     }
 
     virtual ~Player()
     {
-      for (int i=0; i<(int)_idle.size(); i++) {
-        jcanvas::Image *image = _idle[i];
-        jcanvas::Image *image_fire = _fire[i];
-
-        delete image;
-        delete image_fire;
-      }
     }
 
     float GetFieldOfView()
@@ -429,7 +407,7 @@ class Player {
 class Scene : public jcanvas::Window, public jcanvas::KeyListener {
 
   private:
-    std::map<std::string, jcanvas::Image *>
+    std::map<std::string, std::shared_ptr<jcanvas::Image>>
       _images;
     /*
     jmedia::Player 
@@ -439,8 +417,8 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
     jmedia::Audio 
       *_music;
     */
-		jcanvas::Image
-			*_scene;
+    std::shared_ptr<jcanvas::Image>
+			_scene;
     std::vector<Barrier> 
       _barriers;
     std::vector<Sprite> 
@@ -458,17 +436,17 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
       jcanvas::Window({SCREEN_WIDTH, SCREEN_HEIGHT}),
       _player(PLAYER_FOV)
     {
-			_scene = new jcanvas::BufferedImage(jcanvas::jpixelformat_t::RGB32, {SCREEN_WIDTH, SCREEN_HEIGHT});
+			_scene = std::make_shared<jcanvas::BufferedImage>(jcanvas::jpixelformat_t::RGB32, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
 
 			_scene->GetGraphics()->SetAntialias(jcanvas::jantialias_mode_t::None);
 
-      _images["splash"] = new jcanvas::BufferedImage("images/splash.png");
-      _images["wall0"] = new jcanvas::BufferedImage("images/greystone.png");
-      _images["wall1"] = new jcanvas::BufferedImage("images/skulls.png");
-      _images["barrel"] = new jcanvas::BufferedImage("images/barrel.png");
-      _images["ghost"] = new jcanvas::BufferedImage("images/ghost.png");
-      _images["fireball"] = new jcanvas::BufferedImage("images/fireball.png");
-      _images["player"] = new jcanvas::BufferedImage("images/player.png");
+      _images["splash"] = std::make_shared<jcanvas::BufferedImage>("images/splash.png");
+      _images["wall0"] = std::make_shared<jcanvas::BufferedImage>("images/greystone.png");
+      _images["wall1"] = std::make_shared<jcanvas::BufferedImage>("images/skulls.png");
+      _images["barrel"] = std::make_shared<jcanvas::BufferedImage>("images/barrel.png");
+      _images["ghost"] = std::make_shared<jcanvas::BufferedImage>("images/ghost.png");
+      _images["fireball"] = std::make_shared<jcanvas::BufferedImage>("images/fireball.png");
+      _images["player"] = std::make_shared<jcanvas::BufferedImage>("images/player.png");
 
       _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{0, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0});
       _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
@@ -536,13 +514,6 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
     virtual ~Scene()
     {
       _barriers.clear();
-
-      for (auto pair : _images) {
-        jcanvas::Image *image = pair.second;
-
-        delete image;
-        image = nullptr;
-      }
 
       /*
       if (_media != nullptr) {
@@ -679,8 +650,8 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
           inside_player_view = fabs(object_angle) < ((_player.GetFieldOfView() + M_PI/6.0f)/2.0f); // OPTIMIZE:: process only sprites in field of view (increase field of view to capture unbounded sprites)
 
         if (inside_player_view) {
-          jcanvas::Image
-            *image = sprite.GetTexture();
+          std::shared_ptr<jcanvas::Image>
+            image = sprite.GetTexture();
           jcanvas::jpoint_t<int>
             size = image->GetSize();
 
@@ -768,16 +739,10 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
         }
       }
 
-      jcanvas::IndexedImage 
-        image(palette, 37, (uint8_t *)buffer, {FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
-      jcanvas::Image
-        *crop = image.Crop({(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT}),
-        *scale = crop->Scale({SCREEN_WIDTH, SCREEN_HEIGHT/2});
+      std::shared_ptr<jcanvas::Image>
+        image = std::make_shared<jcanvas::IndexedImage>(palette, 37, (uint8_t *)buffer, jcanvas::jpoint_t<int>{FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
 
-      raster.DrawImage(scale, {0, 0});
-
-      delete scale;
-      delete crop;
+      raster.DrawImage(image->Crop({(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT})->Scale({SCREEN_WIDTH, SCREEN_HEIGHT/2}), {0, 0});
     }
 
     void PaintPlayer(jcanvas::Raster &raster)
@@ -787,8 +752,8 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
 
     void PaintMap(jcanvas::Raster &raster)
     {
-      jcanvas::Image 
-        *rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
+      std::shared_ptr<jcanvas::Image>
+        rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
       jcanvas::jpoint_t<int>
         pos = _player.GetPosition();
       jcanvas::jpoint_t<int>
@@ -802,8 +767,6 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
       raster.SetColor(0xff000000 | color << 0x10 | color << 0x08 | color);
       raster.FillArc(pos, {100, 100}, arc1, arc0);
       raster.DrawImage(rotate, {pos.x - size.x/2, pos.y - size.y/2});
-
-      delete rotate;
 
       for (auto &barrier : _barriers) {
         barrier.Paint(raster);
@@ -878,8 +841,8 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
           raster.SetColor(0xfff0f0f0);
           raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
         } else {
-          jcanvas::Image 
-            *texture = pbarrier->GetTexture();
+          std::shared_ptr<jcanvas::Image>
+            texture = pbarrier->GetTexture();
           jcanvas::jpoint_t<int>
             tsize = texture->GetSize();
 					float
