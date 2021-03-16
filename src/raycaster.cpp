@@ -438,7 +438,7 @@ class Scene : public jcanvas::Window, public jcanvas::KeyListener {
     {
 			_scene = std::make_shared<jcanvas::BufferedImage>(jcanvas::jpixelformat_t::RGB32, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
 
-			_scene->GetGraphics()->SetAntialias(jcanvas::jantialias_mode_t::None);
+			_scene->GetGraphics()->SetAntialias(jcanvas::jantialias_t::None);
 
       _images["splash"] = std::make_shared<jcanvas::BufferedImage>("images/splash.png");
       _images["wall0"] = std::make_shared<jcanvas::BufferedImage>("images/greystone.png");
