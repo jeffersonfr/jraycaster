@@ -9,6 +9,7 @@ add_executable(raycaster
 target_link_libraries(raycaster
   PRIVATE
     PkgConfig::jCanvas
+		cairo
   )
 
 file(

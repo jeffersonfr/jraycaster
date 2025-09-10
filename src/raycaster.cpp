@@ -24,7 +24,6 @@
 #include "jcanvas/core/jbufferedimage.h"
 
 #include <algorithm>
-#include <numeric>
 #include <random>
 
 #define SCREEN_WIDTH 720
@@ -40,887 +39,753 @@
 #define FIRE_SCREEN_HEIGHT 75
 
 static uint32_t palette[37] = {
-  0xff070707, 0xff1f0707, 0xff2f0f07, 0xff470f07, 
-  0xff571707, 0xff671f07, 0xff771f07, 0xff8f2707, 
-  0xff9f2f07, 0xffaf3f07, 0xffbf4707, 0xffc74707, 
-  0xffdf4f07, 0xffdf5707, 0xffdf5707, 0xffd75f07, 
-  0xffd75f07, 0xffd7670f, 0xffcf6f0f, 0xffcf770f, 
-  0xffcf7f0f, 0xffcf8717, 0xffc78717, 0xffc78f17, 
-  0xffc7971f, 0xffbf9f1f, 0xffbf9f1f, 0xffbfa727, 
-  0xffbfa727, 0xffbfaf2f, 0xffb7af2f, 0xffb7b72f, 
-  0xffb7b737, 0xffcfcf6f, 0xffdfdf9f, 0xffefefc7, 
+  0xff070707, 0xff1f0707, 0xff2f0f07, 0xff470f07,
+  0xff571707, 0xff671f07, 0xff771f07, 0xff8f2707,
+  0xff9f2f07, 0xffaf3f07, 0xffbf4707, 0xffc74707,
+  0xffdf4f07, 0xffdf5707, 0xffdf5707, 0xffd75f07,
+  0xffd75f07, 0xffd7670f, 0xffcf6f0f, 0xffcf770f,
+  0xffcf7f0f, 0xffcf8717, 0xffc78717, 0xffc78f17,
+  0xffc7971f, 0xffbf9f1f, 0xffbf9f1f, 0xffbfa727,
+  0xffbfa727, 0xffbfaf2f, 0xffb7af2f, 0xffb7b72f,
+  0xffb7b737, 0xffcfcf6f, 0xffdfdf9f, 0xffefefc7,
   0xffffffff
 };
 
-static uint32_t 
-  engine_clock = 0;
+static uint32_t engine_clock = 0;
 
-static uint8_t 
-  buffer[FIRE_SCREEN_HEIGHT*FIRE_SCREEN_WIDTH];
+static uint8_t buffer[FIRE_SCREEN_HEIGHT * FIRE_SCREEN_WIDTH];
 
 class Barrier {
+private:
+  std::shared_ptr<jcanvas::Image> mImage;
+  jcanvas::jline_t<int> mLine;
+  jcanvas::jpoint_t<int> mCenter;
+  float mRadius;
+  float mTextureScale;
+  bool mIsLine;
 
-  private:
-    std::shared_ptr<jcanvas::Image>
-      _image;
-    jcanvas::jline_t<int> 
-      _line;
-    jcanvas::jpoint_t<int>
-      _center;
-    float
-      _radius;
-		float
-			_texture_scale;
-    bool
-      _is_line;
+public:
+  Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, jcanvas::jpoint_t<int> p1)
+    : mImage{std::move(image)}, mLine{p0, p1}, mCenter{}, mRadius(0), mTextureScale{1.0f}, mIsLine{true} {
+  }
 
-  public:
-    Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, jcanvas::jpoint_t<int> p1)
-    {
-      _image = image;
-      _line = {p0, p1};
-			_texture_scale = 1.0f;
-      _is_line = true;
-    }
+  Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, float radius)
+    : mImage{std::move(image)}, mLine{}, mCenter{p0}, mRadius{radius}, mTextureScale{1.0f}, mIsLine{false} {
+  }
 
-    Barrier(std::shared_ptr<jcanvas::Image> image, jcanvas::jpoint_t<int> p0, float radius)
-    {
-      _image = image;
-      // _line = {p0, p1};
-      _center = p0;
-      _radius = radius;
-			_texture_scale = 1.0f;
-      _is_line = false;
-    }
+  virtual ~Barrier() = default;
 
-    virtual ~Barrier()
-    {
-    }
+  std::optional<std::pair<float, jcanvas::jpoint_t<int> > > Intersection(jcanvas::jline_t<float> line) {
+    if (mIsLine) {
+      std::optional<std::pair<float, float> >
+          tu = mLine.Intersection(line);
 
-    std::optional<std::pair<float, jcanvas::jpoint_t<int>>> Intersection(jcanvas::jline_t<float> line)
-    {
-      if (_is_line) {
-        std::optional<std::pair<float, float>>
-          tu = _line.Intersection(line);
-
-        if (tu == std::nullopt or tu->first < 0.0f or tu->first > 1.0f or tu->second < 0.0f) {
-          return std::nullopt;
-        }
-
-        return std::make_pair(tu->first, _line.Point(tu->first));
+      if (tu == std::nullopt or tu->first < 0.0f or tu->first > 1.0f or tu->second < 0.0f) {
+        return std::nullopt;
       }
 
-      std::optional<std::pair<jcanvas::jpoint_t<float>, jcanvas::jpoint_t<float>>>
-        points = jcanvas::jcircle_t<float>{_center, _radius}.Intersection(line);
-
-      if (points != std::nullopt) {
-        float
-          angle = (points->second - _center).Angle();
-
-        // INFO:: hack to avoid a concave version of circle behind of player
-        if ((line.p0 - points->first).Norm() > (line.p0 - points->second).Norm()) {
-          return std::make_pair(angle/(2*M_PI), points->second);
-        }
-      }
-          
-      return std::nullopt;
+      return std::make_pair(tu->first, mLine.Point(tu->first));
     }
 
-    std::optional<float> Distance(jcanvas::jpoint_t<float> point)
-    {
-      if (_is_line) {
-        std::optional<float>
-          t = _line.PerpendicularIntersection(point);
+    std::optional<std::pair<jcanvas::jpoint_t<float>, jcanvas::jpoint_t<float> > >
+        points = jcanvas::jcircle_t<float>{mCenter, mRadius}.Intersection(line);
 
-        if (t == std::nullopt or t < 0.0f or t > 1.0f) {
-          return std::nullopt;
-        }
+    if (points != std::nullopt) {
+      float
+          angle = (points->second - mCenter).Angle();
 
-        return _line.Point(*t).Distance(point);
+      // INFO:: hack to avoid a concave version of circle behind of player
+      if ((line.p0 - points->first).Norm() > (line.p0 - points->second).Norm()) {
+        return std::make_pair(angle / (2 * M_PI), points->second);
       }
-
-      return _center.Distance(point) - _radius;
     }
 
-    float GetSize()
-    {
-      if (_is_line) {
-        return _line.Size();
+    return std::nullopt;
+  }
+
+  std::optional<float> Distance(jcanvas::jpoint_t<float> point) const {
+    if (mIsLine) {
+      std::optional<float>
+          t = mLine.PerpendicularIntersection(point);
+
+      if (t == std::nullopt or t < 0.0f or t > 1.0f) {
+        return std::nullopt;
       }
 
-      return 2*M_PI*_radius;
+      return mLine.Point(*t).Distance(point);
     }
 
-    void Paint(jcanvas::Raster &raster)
-    {
-      raster.SetColor(0xffff0000);
+    return mCenter.Distance(point) - mRadius;
+  }
 
-      if (_is_line) {
-        raster.DrawLine(_line.p0, _line.p1);
-
-        return;
-      }
-
-      raster.DrawCircle(_center, _radius);
+  [[nodiscard]] float GetSize() const {
+    if (mIsLine) {
+      return static_cast<float>(mLine.Size());
     }
 
-    void SetTexture(std::shared_ptr<jcanvas::Image> image)
-    {
-      _image = image;
+    return M_PI * 2.0 * mRadius;
+  }
+
+  void Paint(jcanvas::Raster &raster) const {
+    raster.SetColor(0xffff0000);
+
+    if (mIsLine) {
+      raster.DrawLine(mLine.p0, mLine.p1);
+
+      return;
     }
 
-    std::shared_ptr<jcanvas::Image> GetTexture()
-    {
-      return _image;
+    raster.DrawCircle(mCenter, mRadius);
+  }
+
+  void SetTexture(std::shared_ptr<jcanvas::Image> image) {
+    mImage = image;
+  }
+
+  std::shared_ptr<jcanvas::Image> GetTexture() {
+    return mImage;
+  }
+
+  void SetTextureScale(float param) {
+    mTextureScale = 1.0f / param;
+
+    if (mTextureScale < 0.0f) {
+      mTextureScale = 0.0f;
     }
+  }
 
-		void SetTextureScale(float param)
-		{
-			_texture_scale = 1.0f/param;
-
-			if (_texture_scale < 0.0f) {
-				_texture_scale = 0.0f;
-			}
-		}
-
-		float GetTextureScale()
-		{
-			return _texture_scale;
-		}
-
+  float GetTextureScale() const {
+    return mTextureScale;
+  }
 };
 
 class Sprite {
+private:
+  std::vector<std::shared_ptr<jcanvas::Image>> mFrames;
+  jcanvas::jpoint_t<int> mPos{};
+  jcanvas::jpoint_t<float> mDir{};
+  int mIndex;
+  float mOpacity;
+  bool mAlive;
 
-  private:
-    std::vector<std::shared_ptr<jcanvas::Image>>
-      _frames;
-    jcanvas::jpoint_t<int>
-      _pos;
-    jcanvas::jpoint_t<float>
-      _dir;
-		float
-			_opacity;
-    bool
-      _alive;
+public:
+  Sprite(std::shared_ptr<jcanvas::Image> image, int frames, jcanvas::jpoint_t<int> pos, jcanvas::jpoint_t<float> dir) {
+    jcanvas::jpoint_t<int> size = image->GetSize();
+    int step = size.x / frames;
 
-  public:
-    Sprite(std::shared_ptr<jcanvas::Image> image, int frames, jcanvas::jpoint_t<int> pos, jcanvas::jpoint_t<float> dir)
-    {
-      jcanvas::jpoint_t<int>
-        size = image->GetSize();
-      int 
-        step = size.x/frames;
-
-      for (int i=0; i<frames; i++) {
-        _frames.push_back(image->Crop({i*step, 0, step, size.y}));
-      }
-
-      _pos = pos;
-      _dir = dir;
-			_opacity = 1.0f;
-      _alive = true;
+    for (int i = 0; i < frames; i++) {
+      mFrames.push_back(image->Crop({i * step, 0, step, size.y}));
     }
 
-    virtual ~Sprite()
-    {
+    mPos = pos;
+    mDir = dir;
+    mOpacity = 1.0f;
+    mAlive = true;
+    mIndex = random() % frames;
+  }
+
+  virtual ~Sprite() = default;
+
+  void Invalidate() {
+    mAlive = false;
+  }
+
+  [[nodiscard]] bool Valid() const {
+    return mAlive;
+  }
+
+  [[nodiscard]] jcanvas::jpoint_t<int> GetPosition() const {
+    return mPos;
+  }
+
+  std::shared_ptr<jcanvas::Image> GetTexture() {
+    return mFrames[(mIndex + engine_clock / 2) % mFrames.size()];
+  }
+
+  void SetOpacity(float opacity) {
+    mOpacity = opacity;
+  }
+
+  [[nodiscard]] float GetOpacity() const {
+    return mOpacity;
+  }
+
+  void Update() {
+    mPos += mDir;
+
+    if (mPos.x < 0 or mPos.y < 0 or mPos.x > SCREEN_WIDTH or mPos.y > SCREEN_HEIGHT) {
+      Invalidate();
     }
+  }
 
-    void Invalidate()
-    {
-      _alive = false;
-    }
-
-    bool Valid()
-    {
-      return _alive;
-    }
-
-    jcanvas::jpoint_t<int> GetPosition()
-    {
-      return _pos;
-    }
-
-    std::shared_ptr<jcanvas::Image> GetTexture()
-    {
-      return _frames[(engine_clock/2)%_frames.size()];
-    }
-
-		void SetOpacity(float opacity)
-		{
-			_opacity = opacity;
-		}
-
-		float GetOpacity()
-		{
-			return _opacity;
-		}
-
-    void Update()
-    {
-      _pos += _dir;
-
-      if (_pos.x < 0 or _pos.y < 0 or _pos.x > SCREEN_WIDTH or _pos.y > SCREEN_HEIGHT) {
-        Invalidate();
-      }
-    }
-
-    void Paint(jcanvas::Raster &raster)
-    {
-      raster.DrawImage(GetTexture()->Scale({16, 16}), {_pos.x - 8, _pos.y - 8});
-    }
-
+  void Paint(jcanvas::Raster &raster) {
+    raster.DrawImage(GetTexture()->Scale({16, 16}), {mPos.x - 8, mPos.y - 8});
+  }
 };
 
 class Player {
+private:
+  std::vector<std::shared_ptr<jcanvas::Image>> mIdle;
+  std::vector<std::shared_ptr<jcanvas::Image>> mFire;
+  jcanvas::jpoint_t<int> mPos{};
+  float mDir;
+  float mFov;
 
-  private:
-    std::vector<std::shared_ptr<jcanvas::Image>>
-      _idle;
-    std::vector<std::shared_ptr<jcanvas::Image>>
-      _fire;
-		jcanvas::jpoint_t<int>
-			_pos;
-    float
-			_dir,
-      _fov;
+public:
+  explicit Player(float fov) {
+    mPos = {
+      0, 0
+    };
 
-  public:
-    Player(float fov)
-    {
-			_pos = {
-				0, 0
-			};
+    mDir = 0.0f;
+    mFov = fov;
 
-			_dir = 0.0f;
-      _fov = fov;
+    auto image = std::make_shared<jcanvas::BufferedImage>("images/candle.png");
+    auto image_fire = std::make_shared<jcanvas::BufferedImage>("images/candle-fire.png");
+    jcanvas::jpoint_t<int> isize = image->GetSize();
+    int frames = 4;
+    int step = isize.x / frames;
 
-      std::shared_ptr<jcanvas::BufferedImage>
-        image = std::make_shared<jcanvas::BufferedImage>("images/candle.png"),
-        image_fire = std::make_shared<jcanvas::BufferedImage>("images/candle-fire.png");
-      jcanvas::jpoint_t<int>
-        isize = image->GetSize();
-      int
-        frames = 4,
-        step = isize.x/frames;
+    for (int i = 0; i < frames; i++) {
+      mIdle.push_back(image->Crop({i * step, 0, step, step})->Scale({step * frames, step * frames}));
+      mFire.push_back(image_fire->Crop({i * step, 0, step, step})->Scale({step * frames, step * frames}));
+    }
+  }
 
-      for (int i=0; i<frames; i++) {
-        _idle.push_back(image->Crop({i*step, 0, step, step})->Scale({step*frames, step*frames}));
-        _fire.push_back(image_fire->Crop({i*step, 0, step, step})->Scale({step*frames, step*frames}));
-      }
+  virtual ~Player() = default;
+
+  [[nodiscard]] float GetFieldOfView() const {
+    return mFov;
+  }
+
+  void SetDirection(float dir) {
+    mDir = dir;;
+  }
+
+  [[nodiscard]] float GetDirection() const {
+    return mDir;
+  }
+
+  [[nodiscard]] jcanvas::jpoint_t<int> GetPosition() const {
+    return mPos;
+  }
+
+  void SetPosition(jcanvas::jpoint_t<int> point) {
+    mPos = point;
+  }
+
+  void LookAt(float angle) {
+    mDir = mDir + angle;
+
+    if (mDir < 0.0f) {
+      mDir = mDir + 2.0f * M_PI;
     }
 
-    virtual ~Player()
-    {
-    }
+    mDir = fmod(mDir, 2.0f * M_PI);
+  }
 
-    float GetFieldOfView()
-    {
-      return _fov;
-    }
+  void Step(int signal, float angle) {
+    SetPosition(mPos + jcanvas::jpoint_t<float>{signal * PLAYER_STEP * cos(mDir + angle), signal * PLAYER_STEP * sin(mDir + angle)});
+  }
 
-    void SetDirection(float dir)
-    {
-			_dir = dir;;
-    }
+  void Left() {
+    Step(+1, -M_PI / 2.0f);
+  }
 
-    float GetDirection()
-    {
-			return _dir;
-    }
+  void Right() {
+    Step(+1, M_PI / 2.0f);
+  }
 
-    jcanvas::jpoint_t<int> GetPosition()
-    {
-			return _pos;
-    }
+  void Forward() {
+    Step(+1, 0.0f);
+  }
 
-    void SetPosition(jcanvas::jpoint_t<int> point)
-    {
-			_pos = point;
-    }
+  void Backward() {
+    Step(-1, 0.0f);
+  }
 
-    void LookAt(float angle)
-    {
-			_dir = _dir + angle;
-
-      if (_dir < 0.0f) {
-        _dir = _dir + 2.0f*M_PI;
-      }
-
-      _dir = fmod(_dir, 2.0f*M_PI);
-    }
-
-		void Step(int signal, float angle)
-		{
-      SetPosition(_pos + jcanvas::jpoint_t<float>{signal*PLAYER_STEP*cos(_dir + angle), signal*PLAYER_STEP*sin(_dir + angle)});
-		}
-
-    void Left()
-    {
-			Step(+1, -M_PI/2.0f);
-    }
-
-    void Right()
-    {
-			Step(+1, M_PI/2.0f);
-    }
-
-    void Forward()
-    {
-			Step(+1, 0.0f);
-    }
-
-    void Backward()
-    {
-			Step(-1, 0.0f);
-    }
-
-    void Paint(jcanvas::Raster &raster)
-    {
-      static float
+  void Paint(jcanvas::Raster &raster) const {
+    static float
         arc = 0.0f;
-      static int
+    static int
         range = 32,
         pos = 0,
         dir = +1;
 
-      arc = fmod(arc + 0.1, 2*M_PI);
-      pos = pos + dir*(random()%3);
+    arc = fmod(arc + 0.1, 2 * M_PI);
+    pos = pos + dir * (random() % 3);
 
-      if (pos < -range) {
-        pos = -range;
-        dir = 1;
-      }
-
-      if (pos > range) {
-        pos = range;
-        dir = -1;
-      }
-
-      int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT)/2;
-
-      raster.DrawImage(_idle[(engine_clock/2)%_idle.size()], {(SCREEN_WIDTH - size)/2 + pos, (int)(SCREEN_HEIGHT - 0.9f*size + 0.1f*size*sin(arc))});
+    if (pos < -range) {
+      pos = -range;
+      dir = 1;
     }
 
+    if (pos > range) {
+      pos = range;
+      dir = -1;
+    }
+
+    int size = std::min(SCREEN_WIDTH, SCREEN_HEIGHT) / 2;
+
+    raster.DrawImage(mIdle[(engine_clock / 2) % mIdle.size()], {(SCREEN_WIDTH - size) / 2 + pos, (int) (SCREEN_HEIGHT - 0.9f * size + 0.1f * size * sin(arc))});
+  }
 };
 
 class Scene : public jcanvas::Window, public jcanvas::KeyListener {
+private:
+  std::map<std::string, std::shared_ptr<jcanvas::Image>> mImages;
+  // jmedia::Player *mMedia;
+  // jmedia::AudioMixerControl *mControl;
+  // jmedia::Audio *mMusic;
+  std::shared_ptr<jcanvas::Image> mScene;
+  std::vector<Barrier> mBarriers;
+  std::vector<Sprite> mSprites;
+  Player mPlayer;
+  float mZbuffer[SCREEN_WIDTH];
+  bool mShowFlat{false};
+  bool mShowMap{false};
 
-  private:
-    std::map<std::string, std::shared_ptr<jcanvas::Image>>
-      _images;
+public:
+  Scene()
+    : Window({SCREEN_WIDTH, SCREEN_HEIGHT}),  mPlayer(PLAYER_FOV)
+  {
+    mScene = std::make_shared<jcanvas::BufferedImage>(jcanvas::jpixelformat_t::RGB32, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
+
+    mScene->GetGraphics()->SetAntialias(jcanvas::jantialias_t::None);
+
+    mImages["splash"] = std::make_shared<jcanvas::BufferedImage>("images/splash.png");
+    mImages["wall0"] = std::make_shared<jcanvas::BufferedImage>("images/greystone.png");
+    mImages["wall1"] = std::make_shared<jcanvas::BufferedImage>("images/skulls.png");
+    mImages["barrel"] = std::make_shared<jcanvas::BufferedImage>("images/barrel.png");
+    mImages["ghost"] = std::make_shared<jcanvas::BufferedImage>("images/ghost.png");
+    mImages["fireball"] = std::make_shared<jcanvas::BufferedImage>("images/fireball.png");
+    mImages["player"] = std::make_shared<jcanvas::BufferedImage>("images/player.png");
+
+    mBarriers.emplace_back(mImages["wall0"], jcanvas::jpoint_t<int>{0, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0});
+    mBarriers.emplace_back(mImages["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
+    mBarriers.emplace_back(mImages["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT});
+    mBarriers.emplace_back(mImages["wall0"], jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, 0});
+
+    // circle barrier
+    mBarriers.emplace_back(mImages["wall1"], jcanvas::jpoint_t<int>{(int) (random() % SCREEN_WIDTH), (int) (random() % SCREEN_HEIGHT)},
+                           30);
+
+    for (int i = 0; i < 3; i++) {
+      mBarriers.emplace_back(mImages["wall1"],
+                             jcanvas::jpoint_t<int>{(int) (random() % SCREEN_WIDTH), (int) (random() % SCREEN_HEIGHT)},
+                             jcanvas::jpoint_t<int>{(int) (random() % SCREEN_WIDTH), (int) (random() % SCREEN_HEIGHT)});
+    }
+
+    for (int i = 0; i < 10; i++) {
+      jcanvas::jpoint_t<int> pos = {(int) (random() % SCREEN_WIDTH), (int) (random() % SCREEN_HEIGHT)};
+
+      mSprites.emplace_back(mImages["ghost"], 4, pos, jcanvas::jpoint_t<float>{0, 0});
+      mSprites.rbegin()->SetOpacity(0.5f);
+    }
+
+    mPlayer.SetPosition(jcanvas::jpoint_t<int>{200, 250});
+
+    // INFO:: fire
+    srand(time(NULL));
+
+    for (int j = 0; j < FIRE_SCREEN_HEIGHT; j++) {
+      for (int i = 0; i < FIRE_SCREEN_WIDTH; i++) {
+        buffer[j * FIRE_SCREEN_WIDTH + i] = 36;
+      }
+    }
+
     /*
-    jmedia::Player 
-      *_media;
-    jmedia::AudioMixerControl 
-      *_control;
-    jmedia::Audio 
-      *_music;
+    // INFO:: init sound system
+    _control = nullptr;
+    _music = nullptr;
+
+    _media= jmedia::PlayerManager::CreatePlayer("mixer://");
+
+    if (_media == nullptr) {
+      return;
+    }
+
+    _control = dynamic_cast<jmedia::AudioMixerControl *>(_media->GetControl("audio.mixer"));
+
+    if (_control == nullptr) {
+      return;
+    }
+
+    _music = _control->CreateAudio("sounds/ambiance.wav");
+
+    if (_music == nullptr) {
+      return;
+    }
+
+    _music->SetLoopEnabled(true);
+    _control->StartSound(_music);
     */
-    std::shared_ptr<jcanvas::Image>
-			_scene;
-    std::vector<Barrier> 
-      _barriers;
-    std::vector<Sprite> 
-      _sprites;
-    Player 
-      _player;
-    float
-      _zbuffer[SCREEN_WIDTH];
-    bool
-      _show_flat = false,
-      _show_map = false;
+  }
 
-  public:
-    Scene():
-      jcanvas::Window({SCREEN_WIDTH, SCREEN_HEIGHT}),
-      _player(PLAYER_FOV)
-    {
-			_scene = std::make_shared<jcanvas::BufferedImage>(jcanvas::jpixelformat_t::RGB32, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
+  virtual ~Scene() {
+    mBarriers.clear();
 
-			_scene->GetGraphics()->SetAntialias(jcanvas::jantialias_t::None);
+    /*
+    if (_media != nullptr) {
+      _media->Stop();
+      _media->Close();
+    }
 
-      _images["splash"] = std::make_shared<jcanvas::BufferedImage>("images/splash.png");
-      _images["wall0"] = std::make_shared<jcanvas::BufferedImage>("images/greystone.png");
-      _images["wall1"] = std::make_shared<jcanvas::BufferedImage>("images/skulls.png");
-      _images["barrel"] = std::make_shared<jcanvas::BufferedImage>("images/barrel.png");
-      _images["ghost"] = std::make_shared<jcanvas::BufferedImage>("images/ghost.png");
-      _images["fireball"] = std::make_shared<jcanvas::BufferedImage>("images/fireball.png");
-      _images["player"] = std::make_shared<jcanvas::BufferedImage>("images/player.png");
-
-      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{0, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0});
-      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, 0}, jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT});
-      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{SCREEN_WIDTH, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT});
-      _barriers.emplace_back(_images["wall0"], jcanvas::jpoint_t<int>{0, SCREEN_HEIGHT}, jcanvas::jpoint_t<int>{0, 0});
-
-      // circle barrier
-      _barriers.emplace_back(_images["wall1"], 
-          jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, 30);
-
-      for (int i=0; i<3; i++) {
-        _barriers.emplace_back(_images["wall1"], 
-            jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)}, jcanvas::jpoint_t<int>{(int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)});
-      }
-      
-      for (int i=0; i<10; i++) {
-        jcanvas::jpoint_t<int>
-          pos = {
-            (int)(random()%SCREEN_WIDTH), (int)(random()%SCREEN_HEIGHT)
-          };
-
-        _sprites.emplace_back(_images["ghost"], 4, pos, jcanvas::jpoint_t<float>{0, 0});
-        _sprites.rbegin()->SetOpacity(0.5f);
-      }
-
-      _player.SetPosition(jcanvas::jpoint_t<int>{200, 250});
-      
-      // INFO:: fire
-      srand(time(NULL));
-
-      for (int j=0; j<FIRE_SCREEN_HEIGHT; j++) {
-      	for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
-					buffer[j*FIRE_SCREEN_WIDTH + i] = 36;
-				}
-      }
-
-      /*
-      // INFO:: init sound system
-      _control = nullptr;
+    if (_music != nullptr) {
+      delete _music;
       _music = nullptr;
+    }
+    */
+  }
 
-      _media= jmedia::PlayerManager::CreatePlayer("mixer://");
-
-      if (_media == nullptr) {
-        return;
-      }
-
-      _control = dynamic_cast<jmedia::AudioMixerControl *>(_media->GetControl("audio.mixer"));
-
-      if (_control == nullptr) {
-        return;
-      }
-
-      _music = _control->CreateAudio("sounds/ambiance.wav");
-
-      if (_music == nullptr) {
-        return;
-      }
-      
-      _music->SetLoopEnabled(true);
-      _control->StartSound(_music);
-      */
+  virtual bool KeyPressed(jcanvas::KeyEvent *event) {
+    if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F1) {
+      mShowMap = !mShowMap;
+    } else if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F2) {
+      mShowFlat = !mShowFlat;
     }
 
-    virtual ~Scene()
-    {
-      _barriers.clear();
+    return true;
+  }
 
-      /*
-      if (_media != nullptr) {
-        _media->Stop();
-        _media->Close();
-      }
+  void KeyHandle() {
+    static int fire_wait = 0;
 
-      if (_music != nullptr) {
-        delete _music;
-        _music = nullptr;
+    fire_wait = fire_wait - 1;
+
+    jcanvas::EventManager &ev = GetEventManager();
+
+    if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::Space)) {
+      // INFO:: fire
+      if (fire_wait < 0) {
+        // TODO:: create an animated sprite with direction
+        jcanvas::jpoint_t<float> dir{cos(mPlayer.GetDirection()), sin(mPlayer.GetDirection())};
+        jcanvas::jpoint_t<int> pos = mPlayer.GetPosition() + dir * 50;
+
+        mSprites.emplace_back(mImages["fireball"], 24, pos, dir * 25);
+
+        fire_wait = 10;
       }
-      */
     }
 
-		virtual bool KeyPressed(jcanvas::KeyEvent *event)
-		{
-      if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F1) {
-        _show_map = !_show_map;
-      } else if (event->GetSymbol() == jcanvas::jkeyevent_symbol_t::F2) {
-        _show_flat = !_show_flat;
-      }
-
-      return true;
+    if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorLeft)) {
+      mPlayer.LookAt(-PLAYER_ROTATE);
     }
 
-    void KeyHandle()
-    {
-      static int 
-        fire_wait = 0;
+    if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorRight)) {
+      mPlayer.LookAt(PLAYER_ROTATE);
+    }
 
-      fire_wait = fire_wait - 1;
+    if (
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp) or
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown) or
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a) or
+      ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
+      jcanvas::jpoint_t<int> pos = mPlayer.GetPosition();
 
-      jcanvas::EventManager &ev = GetEventManager();
-
-      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::Space)) { // INFO:: fire
-        if (fire_wait < 0) {
-          // TODO:: create an animated sprite with direction
-          jcanvas::jpoint_t<float>
-            dir {cos(_player.GetDirection()), sin(_player.GetDirection())};
-          jcanvas::jpoint_t<int>
-            pos = _player.GetPosition() + dir*50;
-
-          _sprites.emplace_back(_images["fireball"], 24, pos, dir*25);
-
-          fire_wait = 10;
-        }
+      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp)) {
+        mPlayer.Forward();
+      } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown)) {
+        mPlayer.Backward();
+      } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a)) {
+        mPlayer.Left();
+      } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
+        mPlayer.Right();
       }
 
-      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorLeft)) {
-        _player.LookAt(-PLAYER_ROTATE);
-      }
-      
-      if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorRight)) {
-        _player.LookAt(PLAYER_ROTATE);
-      }
-      
-      if (
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp) or
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown) or
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a) or
-          ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
-        jcanvas::jpoint_t<int> pos = _player.GetPosition();
+      for (auto barrier: mBarriers) {
+        std::optional<float>
+            distance = barrier.Distance(mPlayer.GetPosition());
 
-        if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::w) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorUp)) {
-          _player.Forward();
-        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::s) or ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::CursorDown)) {
-          _player.Backward();
-        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::a)) {
-          _player.Left();
-        } else if (ev.IsKeyDown(jcanvas::jkeyevent_symbol_t::d)) {
-          _player.Right();
-        }
+        if (distance != std::nullopt and distance < 8.0f) {
+          // INFO:: minumum perpendicular distance to wall
+          mPlayer.SetPosition(pos);
 
-        for (auto barrier : _barriers) {
-          std::optional<float>
-            distance = barrier.Distance(_player.GetPosition());
-
-          if (distance != std::nullopt and distance < 8.0f) { // INFO:: minumum perpendicular distance to wall
-            _player.SetPosition(pos);
-
-            return;
-          }
+          return;
         }
       }
     }
+  }
 
-    void Framerate(int fps)
-    {
-      static auto begin = std::chrono::steady_clock::now();
-      static int index = 0;
+  void Framerate(int fps) {
+    static auto begin = std::chrono::steady_clock::now();
+    static int index = 0;
 
-      std::chrono::time_point<std::chrono::steady_clock> timestamp = begin + std::chrono::milliseconds(index++*(1000/fps));
-      std::chrono::time_point<std::chrono::steady_clock> current = std::chrono::steady_clock::now();
-      std::chrono::milliseconds diff = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp - current);
+    std::chrono::time_point<std::chrono::steady_clock> timestamp = begin + std::chrono::milliseconds(index++ * (1000 / fps));
+    std::chrono::time_point<std::chrono::steady_clock> current = std::chrono::steady_clock::now();
+    std::chrono::milliseconds diff = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp - current);
 
-      if (diff.count() < 0) {
-        return;
-      }
-
-      std::this_thread::sleep_for(diff);
+    if (diff.count() < 0) {
+      return;
     }
 
-    void PaintSprites(jcanvas::Raster &raster)
-    {
-      // INFO:: draw sprites
-      jcanvas::jpoint_t<int>
-        ppos = _player.GetPosition();
+    std::this_thread::sleep_for(diff);
+  }
 
-      std::sort(_sprites.begin(), _sprites.end(), [&](Sprite &s1, Sprite &s2) {
-        return ppos.Distance(s1.GetPosition()) > ppos.Distance(s2.GetPosition());
-      });
+  void PaintSprites(jcanvas::Raster &raster) {
+    // INFO:: draw sprites
+    jcanvas::jpoint_t<int> ppos = mPlayer.GetPosition();
 
-      for (auto &sprite : _sprites) {
-        jcanvas::jpoint_t<int>
-          dpos = sprite.GetPosition() - ppos;
+    std::sort(mSprites.begin(), mSprites.end(), [&](Sprite &s1, Sprite &s2) {
+      return ppos.Distance(s1.GetPosition()) > ppos.Distance(s2.GetPosition());
+    });
+
+    for (auto &sprite: mSprites) {
+      jcanvas::jpoint_t<int> dpos = sprite.GetPosition() - ppos;
+      float object_angle = atanf(dpos.y / (float) dpos.x) - mPlayer.GetDirection();
+
+      if (dpos.x < 0) {
+        object_angle = object_angle + M_PI;
+      }
+
+      object_angle = fmod(object_angle + mPlayer.GetFieldOfView() / 2, 2.0f * M_PI);
+
+      if (object_angle < 0.0f) {
+        object_angle = object_angle + 2.0f * M_PI;
+      }
+
+      object_angle = object_angle - mPlayer.GetFieldOfView() / 2.0f;
+
+      bool inside_player_view = fabs(object_angle) < ((mPlayer.GetFieldOfView() + M_PI / 6.0f) / 2.0f);
+      // OPTIMIZE:: process only sprites in field of view (increase field of view to capture unbounded sprites)
+
+      if (inside_player_view) {
+        std::shared_ptr<jcanvas::Image> image = sprite.GetTexture();
+        jcanvas::jpoint_t<int> size = image->GetSize();
+
         float
-          object_angle = atanf(dpos.y/(float)dpos.x) - _player.GetDirection();
-
-        if (dpos.x < 0) {
-          object_angle = object_angle + M_PI;
-        }
-
-        object_angle = fmod(object_angle + _player.GetFieldOfView()/2, 2.0f*M_PI);
-
-        if (object_angle < 0.0f) {
-          object_angle = object_angle + 2.0f*M_PI;
-        }
-
-        object_angle = object_angle - _player.GetFieldOfView()/2.0f;
-
-        bool
-          inside_player_view = fabs(object_angle) < ((_player.GetFieldOfView() + M_PI/6.0f)/2.0f); // OPTIMIZE:: process only sprites in field of view (increase field of view to capture unbounded sprites)
-
-        if (inside_player_view) {
-          std::shared_ptr<jcanvas::Image>
-            image = sprite.GetTexture();
-          jcanvas::jpoint_t<int>
-            size = image->GetSize();
-
-          float
             object_distance = dpos.EuclidianNorm(),
-            object_ceiling = SCREEN_HEIGHT/2.0f - SCREEN_HEIGHT/(2.0f*object_distance),
+            object_ceiling = SCREEN_HEIGHT / 2.0f - SCREEN_HEIGHT / (2.0f * object_distance),
             object_floor = SCREEN_HEIGHT - object_ceiling,
-            object_height = (object_floor - object_ceiling)*size.y,
-            object_ratio = size.y/(float)size.x,
-            object_width = object_height/object_ratio,
-            object_center = (0.5f * (object_angle/(_player.GetFieldOfView()/2.0f)) + 0.5f) * SCREEN_WIDTH;
+            object_height = (object_floor - object_ceiling) * size.y,
+            object_ratio = size.y / (float) size.x,
+            object_width = object_height / object_ratio,
+            object_center = (0.5f * (object_angle / (mPlayer.GetFieldOfView() / 2.0f)) + 0.5f) * SCREEN_WIDTH;
 
-          for (int j=0; j<object_height; j++) {
-						int y = object_ceiling + j;
+        for (int j = 0; j < object_height; j++) {
+          int y = object_ceiling + j;
 
-						if (y < 0) {
-							continue;
-						}
+          if (y < 0) {
+            continue;
+          }
 
-						if (y >= SCREEN_HEIGHT) {
-							break;
-						}
+          if (y >= SCREEN_HEIGHT) {
+            break;
+          }
 
-          	for (int i=0; i<object_width; i++) {
-              float 
-                sample_x = i/object_width,
-                sample_y = j/object_height;
-              int
-                x = (int)(object_center + i - object_width/2.0f);
+          for (int i = 0; i < object_width; i++) {
+            float sample_x = i / object_width;
+            float sample_y = j / object_height;
+            int x = (int) (object_center + i - object_width / 2.0f);
 
-							if (x < 0) {
-								continue;
-							}
+            if (x < 0) {
+              continue;
+            }
 
-							if (x >= SCREEN_WIDTH) {
-								break;
-							}
+            if (x >= SCREEN_WIDTH) {
+              break;
+            }
 
-							if (object_distance <= _zbuffer[x]) {
-								uint32_t
-									pixel = image->GetGraphics()->GetRGB({(int)(sample_x*size.x), (int)(sample_y*size.y)});
+            if (object_distance <= mZbuffer[x]) {
+              uint32_t pixel = image->GetGraphics()->GetRGB({(int) (sample_x * size.x), (int) (sample_y * size.y)});
 
-                if (pixel & 0xff000000) {
-                  float
-                    light = 1.0f - object_distance/std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
-                  uint8_t
+              if (pixel & 0xff000000) {
+                float light = 1.0f - object_distance / std::max(SCREEN_WIDTH, SCREEN_HEIGHT);
+                uint8_t
                     pr = (pixel >> 0x10) & 0xff,
                     pg = (pixel >> 0x08) & 0xff,
                     pb = (pixel >> 0x00) & 0xff;
 
-                  pr = pr*light;
-                  pg = pg*light;
-                  pb = pb*light;
+                pr = pr * light;
+                pg = pg * light;
+                pb = pb * light;
 
-                  raster.SetColor(0xff000000 | pr << 0x10 | pg << 0x08 | pb);
-                  raster.SetPixel({x, y});
-                }
-							}
+                raster.SetColor(0xff000000 | pr << 0x10 | pg << 0x08 | pb);
+                raster.SetPixel({x, y});
+              }
             }
           }
         }
-
-        sprite.Update();
       }
-    
-      // INFO:: remove invalid sprites, like dead persons, fireballs, ...
-      _sprites.erase(std::remove_if(_sprites.begin(), _sprites.end(), 
-            [](Sprite &param) {
-              return param.Valid() == false;
-            }), _sprites.end());
+
+      sprite.Update();
     }
 
-    void PaintFire(jcanvas::Raster &raster)
-    {
-      for (int j=0; j<FIRE_SCREEN_HEIGHT - 1; j++) {
-        for (int i=0; i<FIRE_SCREEN_WIDTH; i++) {
-          int decay = random()%3;
-          int intensity = buffer[(j + 1)*FIRE_SCREEN_WIDTH + i] - decay;
+    // INFO:: remove invalid sprites, like dead persons, fireballs, ...
+    mSprites.erase(std::remove_if(mSprites.begin(), mSprites.end(),
+      [](Sprite &param) {
+        return param.Valid() == false;
+    }), mSprites.end());
+  }
 
-          if (intensity < 0) {
-            intensity = 0;
+  void PaintFire(jcanvas::Raster &raster) {
+    for (int j = 0; j < FIRE_SCREEN_HEIGHT - 1; j++) {
+      for (int i = 0; i < FIRE_SCREEN_WIDTH; i++) {
+        int decay = random() % 3;
+        int intensity = buffer[(j + 1) * FIRE_SCREEN_WIDTH + i] - decay;
+
+        if (intensity < 0) {
+          intensity = 0;
+        }
+
+        buffer[j * FIRE_SCREEN_WIDTH + (i + decay)] = intensity;
+      }
+    }
+
+    std::shared_ptr<jcanvas::Image> image = std::make_shared<jcanvas::IndexedImage>(palette, 37, (uint8_t *) buffer, jcanvas::jpoint_t<int>{FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
+
+    raster.DrawImage(image->Crop({(int) (FIRE_SCREEN_WIDTH * mPlayer.GetDirection() / (2.0f * M_PI)), 0, FIRE_SCREEN_WIDTH / 3, FIRE_SCREEN_HEIGHT})->Scale({SCREEN_WIDTH, SCREEN_HEIGHT / 2}), {0, 0});
+  }
+
+  void PaintPlayer(jcanvas::Raster &raster) {
+    mPlayer.Paint(raster);
+  }
+
+  void PaintMap(jcanvas::Raster &raster) {
+    std::shared_ptr<jcanvas::Image> rotate = mImages["player"]->Rotate(-mPlayer.GetDirection() + M_PI);
+    jcanvas::jpoint_t<int> pos = mPlayer.GetPosition();
+    jcanvas::jpoint_t<int> size = rotate->GetSize();
+    float arc0 = -mPlayer.GetDirection() + mPlayer.GetFieldOfView() / 2.0f;
+    float arc1 = -mPlayer.GetDirection() - mPlayer.GetFieldOfView() / 2.0f;
+    int color = 0x80 + random() % 64 - 32;
+
+    raster.SetColor(0xff000000 | color << 0x10 | color << 0x08 | color);
+    raster.FillArc(pos, {100, 100}, arc1, arc0);
+    raster.DrawImage(rotate, {pos.x - size.x / 2, pos.y - size.y / 2});
+
+    for (auto &barrier: mBarriers) {
+      barrier.Paint(raster);
+    }
+
+    for (auto &sprite: mSprites) {
+      sprite.Paint(raster);
+    }
+  }
+
+  void Paint(jcanvas::Graphics *g) {
+    jcanvas::Raster raster((uint32_t *) cairo_image_surface_get_data(mScene->GetGraphics()->GetCairoSurface()), mScene->GetSize());
+
+    raster.Clear();
+
+    PaintFire(raster);
+
+    // INFO:: key handling
+    KeyHandle();
+
+    // INFO:: draw walls
+    jcanvas::jpoint_t<int> pos = mPlayer.GetPosition();
+    int random_light = random() % 10;
+
+    // INFO:: 3d map
+    for (int i = 0; i < SCREEN_WIDTH; i++) {
+      std::pair<float, jcanvas::jpoint_t<int>> best = {-1.0f, {9999, 9999}};
+      Barrier *pbarrier = nullptr;
+      float angle = -mPlayer.GetFieldOfView() / 2.0f + i * mPlayer.GetFieldOfView() / SCREEN_WIDTH + mPlayer.GetDirection();
+      float d0 = (pos - best.second).Norm();
+
+      // circle
+      for (auto &barrier: mBarriers) {
+        jcanvas::jline_t<float> ray = {pos, jcanvas::jpoint_t<float>(pos) + jcanvas::jpoint_t<float>{cos(angle), sin(angle)}};
+        std::optional<std::pair<float, jcanvas::jpoint_t<int>>> intersection = barrier.Intersection(ray);
+
+        if (intersection != std::nullopt) {
+          float d1 = (pos - intersection->second).Norm();
+
+          if (d1 < d0) {
+            best = *intersection;
+            d0 = d1;
+            pbarrier = &barrier;
           }
-
-          buffer[j*FIRE_SCREEN_WIDTH + (i + decay)] = intensity;
         }
       }
 
-      std::shared_ptr<jcanvas::Image>
-        image = std::make_shared<jcanvas::IndexedImage>(palette, 37, (uint8_t *)buffer, jcanvas::jpoint_t<int>{FIRE_SCREEN_WIDTH, FIRE_SCREEN_HEIGHT});
-
-      raster.DrawImage(image->Crop({(int)(FIRE_SCREEN_WIDTH*_player.GetDirection()/(2.0f*M_PI)), 0, FIRE_SCREEN_WIDTH/3, FIRE_SCREEN_HEIGHT})->Scale({SCREEN_WIDTH, SCREEN_HEIGHT/2}), {0, 0});
-    }
-
-    void PaintPlayer(jcanvas::Raster &raster)
-    {
-      _player.Paint(raster);
-    }
-
-    void PaintMap(jcanvas::Raster &raster)
-    {
-      std::shared_ptr<jcanvas::Image>
-        rotate = _images["player"]->Rotate(-_player.GetDirection() + M_PI);
-      jcanvas::jpoint_t<int>
-        pos = _player.GetPosition();
-      jcanvas::jpoint_t<int>
-        size = rotate->GetSize();
-      float 
-        arc0 = -_player.GetDirection() + _player.GetFieldOfView()/2.0f,
-        arc1 = -_player.GetDirection() - _player.GetFieldOfView()/2.0f;
-			int 
-				color = 0x80 + random()%64 - 32;
-
-      raster.SetColor(0xff000000 | color << 0x10 | color << 0x08 | color);
-      raster.FillArc(pos, {100, 100}, arc1, arc0);
-      raster.DrawImage(rotate, {pos.x - size.x/2, pos.y - size.y/2});
-
-      for (auto &barrier : _barriers) {
-        barrier.Paint(raster);
+      if (pbarrier == nullptr) {
+        continue;
       }
 
-      for (auto &sprite : _sprites) {
-        sprite.Paint(raster);
-      }
-    }
+      d0 = sqrtf(d0);
 
-    void Paint(jcanvas::Graphics *g) 
-    {
-      jcanvas::Raster raster((uint32_t *)cairo_image_surface_get_data(_scene->GetGraphics()->GetCairoSurface()), _scene->GetSize());
+      mZbuffer[i] = d0;
 
-      raster.Clear();
+      float cosf = cos(-mPlayer.GetFieldOfView() / 2.0f + (i * mPlayer.GetFieldOfView()) / (float) SCREEN_WIDTH);
+      int wall = (SCREEN_HEIGHT * SCALING_MAP) / (d0 * cosf);
 
-      PaintFire(raster);
+      if (mShowFlat == true) {
+        raster.SetColor(0xfff0f0f0);
+        raster.DrawLine({i, SCREEN_HEIGHT / 2 - wall}, {i, SCREEN_HEIGHT / 2 + wall});
+      } else {
+        std::shared_ptr<jcanvas::Image> texture = pbarrier->GetTexture();
+        jcanvas::jpoint_t<int> tsize = texture->GetSize();
+        float scale = pbarrier->GetTextureScale();
+        int index = (int) (best.first * tsize.x);
 
-			// INFO:: key handling
-      KeyHandle();
-
-      // INFO:: draw walls
-			jcanvas::jpoint_t<int>
-				pos = _player.GetPosition();
-      int 
-				random_light = random()%10;
-
-      // INFO:: 3d map
-      for (int i=0; i<SCREEN_WIDTH; i++) {
-        std::pair<float, jcanvas::jpoint_t<int>> 
-          best = {-1.0f, {9999, 9999}};
-        Barrier 
-          *pbarrier = nullptr;
-				float
-					angle = -_player.GetFieldOfView()/2.0f + i*_player.GetFieldOfView()/SCREEN_WIDTH + _player.GetDirection();
-        float 
-          d0 = (pos - best.second).Norm();
-
-        // circle
-        for (auto &barrier : _barriers) {
-          jcanvas::jline_t<float>
-            ray = {pos, jcanvas::jpoint_t<float>(pos) + jcanvas::jpoint_t<float>{cos(angle), sin(angle)}};
-          std::optional<std::pair<float, jcanvas::jpoint_t<int>>>
-            intersection = barrier.Intersection(ray);
-
-          if (intersection != std::nullopt) {
-            float
-              d1 = (pos - intersection->second).Norm();
-
-            if (d1 < d0) {
-              best = *intersection;
-              d0 = d1;
-              pbarrier = &barrier;
-            }
-          }
+        if (scale != 0.0f) {
+          index = (int) (best.first * pbarrier->GetSize() * scale) % tsize.x;
         }
 
-        if (pbarrier == nullptr) {
-          continue;
-        }
+        // INFO:: casting walls
+        for (int j = SCREEN_HEIGHT / 2 - wall; j < SCREEN_HEIGHT / 2 + wall; j++) {
+          if (j > 0 and j < SCREEN_HEIGHT) {
+            int size = j - SCREEN_HEIGHT / 2 + wall;
 
-        d0 = sqrtf(d0);
-
-        _zbuffer[i] = d0;
-
-        float
-          cosf = cos(-_player.GetFieldOfView()/2.0f + (i*_player.GetFieldOfView())/(float)SCREEN_WIDTH);
-        int
-          wall = (SCREEN_HEIGHT*SCALING_MAP)/(d0*cosf);
-
-        if (_show_flat == true) {
-          raster.SetColor(0xfff0f0f0);
-          raster.DrawLine({i, SCREEN_HEIGHT/2 - wall}, {i, SCREEN_HEIGHT/2 + wall});
-        } else {
-          std::shared_ptr<jcanvas::Image>
-            texture = pbarrier->GetTexture();
-          jcanvas::jpoint_t<int>
-            tsize = texture->GetSize();
-					float
-						scale = pbarrier->GetTextureScale();
-          int 
-            index = (int)(best.first*tsize.x);
-
-					if (scale != 0.0f) {
-            index = (int)(best.first*pbarrier->GetSize()*scale)%tsize.x;
-					}
-
-          // INFO:: casting walls
-          for (int j=SCREEN_HEIGHT/2 - wall; j<SCREEN_HEIGHT/2 + wall; j++) {
-            if (j > 0 and j < SCREEN_HEIGHT) {
-              int 
-								size = j - SCREEN_HEIGHT/2 + wall;
-
-              raster.SetColor(texture->GetGraphics()->GetRGB({index, (tsize.y*size)/(2*wall)}));
-              raster.SetPixel({i, j});
-            }
-          }
-
-          // INFO:: floor with lights/shadows
-          int wall_limit = SCREEN_HEIGHT/2 + wall;
-
-          if (wall_limit > SCREEN_HEIGHT) {
-            wall_limit = SCREEN_HEIGHT;
-          }
-
-          // fire light on floor
-          for (int j=wall_limit; j<SCREEN_HEIGHT; j++) {
-            float
-              d = SCREEN_HEIGHT/(2.0f*j - SCREEN_HEIGHT)/cosf;
-            int 
-              c = 0xff - (0x80 + random_light)*d;
-
-            if (c < 0x00) {
-              c = 0x00;
-            }
-            
-            if (c > 0xff) {
-              c = 0xff;
-            }
-
-            raster.SetColor(0xff000000 | c << 0x10 | c << 0x08 | c << 0x00);
+            raster.SetColor(texture->GetGraphics()->GetRGB({index, (tsize.y * size) / (2 * wall)}));
             raster.SetPixel({i, j});
           }
         }
+
+        // INFO:: floor with lights/shadows
+        int wall_limit = SCREEN_HEIGHT / 2 + wall;
+
+        if (wall_limit > SCREEN_HEIGHT) {
+          wall_limit = SCREEN_HEIGHT;
+        }
+
+        // fire light on floor
+        for (int j = wall_limit; j < SCREEN_HEIGHT; j++) {
+          float d = SCREEN_HEIGHT / (2.0f * j - SCREEN_HEIGHT) / cosf;
+          int c = 0xff - (0x80 + random_light) * d;
+
+          if (c < 0x00) {
+            c = 0x00;
+          }
+
+          if (c > 0xff) {
+            c = 0xff;
+          }
+
+          raster.SetColor(0xff000000 | c << 0x10 | c << 0x08 | c << 0x00);
+          raster.SetPixel({i, j});
+        }
       }
-
-      PaintSprites(raster);
-
-      PaintPlayer(raster);
-
-      if (_show_map == true) {
-        PaintMap(raster);
-      }
-
-      // INFO:: splash screen
-      static int splash_timer = 0;
-
-      if (splash_timer++ < 100) {
-        _scene->GetGraphics()->DrawImage(_images["splash"], {0, 0, _scene->GetSize()});
-      }
-
-			g->DrawImage(_scene, {{0, 0}, GetSize()});
-
-      engine_clock++;
-
-      Repaint();
-
-      Framerate(25);
     }
 
+    PaintSprites(raster);
+    PaintPlayer(raster);
+
+    if (mShowMap == true) {
+      PaintMap(raster);
+    }
+
+    // INFO:: splash screen
+    static int splash_timer = 0;
+
+    if (splash_timer++ < 100) {
+      mScene->GetGraphics()->DrawImage(mImages["splash"], {0, 0, mScene->GetSize()});
+    }
+
+    g->DrawImage(mScene, {{0, 0}, GetSize()});
+
+    engine_clock++;
+
+    Repaint();
+
+    Framerate(25);
+  }
 };
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   jcanvas::Application::Init(argc, argv);
 
   srandom(time(NULL));
